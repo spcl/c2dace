@@ -1,6 +1,7 @@
 import re
 import argparse
 import os
+import subprocess
 
 import dace
 from dace.sdfg import *
