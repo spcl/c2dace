@@ -2,12 +2,10 @@ import re
 import argparse
 import os
 
-import dace
+import dace 
 from dace.sdfg import *
 from dace.data import Scalar
 from dace.properties import CodeBlock
-
-import config as cfg
 
 from c2d_util import *
 from c2d_c_ast_transforms import *

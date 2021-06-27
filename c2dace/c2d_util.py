@@ -8,7 +8,7 @@ from dace.sdfg.nodes import Tasklet
 from dace.data import Scalar
 from dace.properties import CodeBlock
 from dace.sdfg import *
-import config as cfg
+#import config as cfg
 
 from c2d_c_ast_transforms import *
 
