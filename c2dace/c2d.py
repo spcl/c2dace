@@ -2,15 +2,17 @@ import re
 import argparse
 import os
 
-import dace 
+import dace
 from dace.sdfg import *
 from dace.data import Scalar
 from dace.properties import CodeBlock
 
+import sys
+
 from c2d_util import *
 from c2d_c_ast_transforms import *
 from c2d_c_ast_validators import *
-import c2d_ast_output
+from c2d_ast_output import *
 
 
 def get_cli_arguments():
