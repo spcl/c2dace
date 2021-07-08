@@ -417,9 +417,10 @@ class UnaryToBinary(NodeTransformer):
 
 class CompoundToBinary(NodeTransformer):
     def visit_CompoundAssignOp(self, node: CompoundAssignOp):
+        newop = (node.op).replace("=", "")
         return BinOp(op="=",
                      lvalue=node.lvalue,
-                     rvalue=BinOp(op=node.op,
+                     rvalue=BinOp(op=newop,
                                   lvalue=node.lvalue,
                                   rvalue=node.rvalue))
 

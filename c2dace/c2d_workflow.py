@@ -192,9 +192,10 @@ def c2d_workflow(_dir,
 
     from dace import propagate_memlets_sdfg
     from dace.transformation.interstate import StateFusion, StateAssignElimination, InlineSDFG, LoopToMap, InlineTransients, HoistState, RefineNestedAccess
-    from dace.transformation.dataflow import MergeSourceSinkArrays, PruneConnectors, AugAssignToWCR, MapCollapse
+    from dace.transformation.dataflow import MergeSourceSinkArrays, PruneConnectors, AugAssignToWCR, MapCollapse, TrivialMapElimination
     from dace.transformation.transformation import strict_transformations
     from dace.sdfg.utils import fuse_states
+    from dace.transformation import helpers as xfh
     from dace.sdfg.analysis import scalar_to_symbol as scal2sym
     import time
 
@@ -223,14 +224,31 @@ def c2d_workflow(_dir,
         promoted = scal2sym.promote_scalars_to_symbols(sd)
         print(sd.label, 'promoting', promoted)
 
+    xform_types = [
+        TrivialMapElimination, HoistState, InlineTransients, AugAssignToWCR
+    ] + strict_reduced
     for i in range(4):
         propagate_memlets_sdfg(globalsdfg)
         globalsdfg.apply_strict_transformations()
-        xforms = globalsdfg.apply_transformations_repeated(
-            [HoistState, InlineTransients, AugAssignToWCR] + strict_reduced,
-            strict=True,
-            validate_all=True)
-        globalsdfg.apply_transformations_repeated(LoopToMap)
+        xforms = globalsdfg.apply_transformations_repeated(xform_types,
+                                                           strict=True,
+                                                           validate_all=True)
+
+        # Strict transformations and loop parallelization
+        transformed = True
+        while transformed:
+            globalsdfg.apply_transformations_repeated(xform_types, strict=True)
+            for sd in globalsdfg.all_sdfgs_recursive():
+                xfh.split_interstate_edges(sd)
+            l2ms = globalsdfg.apply_transformations_repeated(LoopToMap,
+                                                             strict=True,
+                                                             validate=False)
+            transformed = l2ms > 0
+
+        globalsdfg.apply_transformations_repeated(LoopToMap,
+                                                  strict=True,
+                                                  validate=False)
+
         if xforms == 0:
             break
     globalsdfg.save("tmp/" + filecore + "-perf.sdfg")
