@@ -2,7 +2,7 @@ from operator import ne
 from typing import List, Tuple, Set
 import clang.cindex
 from clang.cindex import Cursor
-
+import copy
 import dace
 from dace.sdfg.nodes import Tasklet
 from dace.data import Scalar
@@ -563,7 +563,26 @@ class AST2SDFG:
         used_vars = [
             node for node in walk(node.body) if isinstance(node, DeclRefExpr)
         ]
+        binop_nodes = [
+            node for node in walk(node.body) if isinstance(node, BinOp)
+        ]
+        write_nodes = [node for node in binop_nodes if node.op == "="]
+        write_vars = [node.lvalue for node in write_nodes]
+        read_vars = copy.deepcopy(used_vars)
+        for i in write_vars:
+            if i in read_vars:
+                read_vars.remove(i)
+        print(write_vars)
+        print(read_vars)
+        write_vars = remove_duplicates(write_vars)
+        read_vars = remove_duplicates(read_vars)
         used_vars = remove_duplicates(used_vars)
+        write_names = []
+        read_names = []
+        for i in write_vars:
+            write_names.append(i.name)
+        for i in read_vars:
+            read_names.append(i.name)
         parameters = node.args.copy()
         new_sdfg = dace.SDFG(node.name)
         substate = add_simple_state_to_sdfg(self, sdfg, "state" + node.name)
@@ -573,6 +592,9 @@ class AST2SDFG:
 
         # creating new arrays for nested sdfg
         inouts_in_new_sdfg = []
+        ins_in_new_sdfg = []
+        outs_in_new_sdfg = []
+
         ind_count = 0
 
         var2 = []
@@ -639,6 +661,13 @@ class AST2SDFG:
                     self.all_array_names.append(
                         self.name_mapping[new_sdfg][local_name.name])
 
+                    if local_name.name in read_names:
+                        ins_in_new_sdfg.append(
+                            self.name_mapping[new_sdfg][local_name.name])
+                    if local_name.name in write_names:
+                        outs_in_new_sdfg.append(
+                            self.name_mapping[new_sdfg][local_name.name])
+
                     inouts_in_new_sdfg.append(
                         self.name_mapping[new_sdfg][local_name.name])
 
@@ -650,14 +679,15 @@ class AST2SDFG:
 
                     shape = array.shape[indices:]
 
-                    if shape == () or shape == (1, ):
-                        new_sdfg.add_scalar(
-                            self.name_mapping[new_sdfg][local_name.name],
-                            array.dtype, array.storage, False)
-                    else:
-                        new_sdfg.add_array(
-                            self.name_mapping[new_sdfg][local_name.name],
-                            shape, array.dtype, array.storage, False)
+                    if local_name.name in read_names or local_name.name in write_names:
+                        if shape == () or shape == (1, ):
+                            new_sdfg.add_scalar(
+                                self.name_mapping[new_sdfg][local_name.name],
+                                array.dtype, array.storage, False)
+                        else:
+                            new_sdfg.add_array(
+                                self.name_mapping[new_sdfg][local_name.name],
+                                shape, array.dtype, array.storage, False)
             if not matched:
                 for array_name, array in all_arrays.items():
                     if array_name in [globalsdfg_name]:
@@ -672,6 +702,13 @@ class AST2SDFG:
                         inouts_in_new_sdfg.append(
                             self.name_mapping[new_sdfg][local_name.name])
 
+                        if local_name.name in read_names:
+                            ins_in_new_sdfg.append(
+                                self.name_mapping[new_sdfg][local_name.name])
+                        if local_name.name in write_names:
+                            outs_in_new_sdfg.append(
+                                self.name_mapping[new_sdfg][local_name.name])
+
                         indices = 0
                         tmp_node = variable_in_call
                         while isinstance(tmp_node, ArraySubscriptExpr):
@@ -679,15 +716,17 @@ class AST2SDFG:
                             tmp_node = tmp_node.unprocessed_name
 
                         shape = array.shape[indices:]
-
-                        if shape == () or shape == (1, ):
-                            new_sdfg.add_scalar(
-                                self.name_mapping[new_sdfg][local_name.name],
-                                array.dtype, array.storage, False)
-                        else:
-                            new_sdfg.add_array(
-                                self.name_mapping[new_sdfg][local_name.name],
-                                shape, array.dtype, array.storage, False)
+                        if local_name.name in read_names or local_name.name in write_names:
+                            if shape == () or shape == (1, ):
+                                new_sdfg.add_scalar(
+                                    self.name_mapping[new_sdfg][
+                                        local_name.name], array.dtype,
+                                    array.storage, False)
+                            else:
+                                new_sdfg.add_array(
+                                    self.name_mapping[new_sdfg][
+                                        local_name.name], shape, array.dtype,
+                                    array.storage, False)
         # Preparing symbol dictionary for nested sdfg
         sym_dict = {}
         for i in sdfg.symbols:
@@ -699,14 +738,16 @@ class AST2SDFG:
                 self.all_array_names, i)
             self.all_array_names.append(self.name_mapping[new_sdfg][i])
             inouts_in_new_sdfg.append(self.name_mapping[new_sdfg][i])
+            ins_in_new_sdfg.append(self.name_mapping[new_sdfg][i])
+            outs_in_new_sdfg.append(self.name_mapping[new_sdfg][i])
             new_sdfg.add_scalar(self.name_mapping[new_sdfg][i],
                                 dace.int32,
                                 transient=False)
 
         internal_sdfg = substate.add_nested_sdfg(new_sdfg,
                                                  sdfg,
-                                                 inouts_in_new_sdfg,
-                                                 inouts_in_new_sdfg,
+                                                 ins_in_new_sdfg,
+                                                 outs_in_new_sdfg,
                                                  symbol_mapping=sym_dict)
         #if sdfg is not self.globalsdfg:
         for i in self.libstates:
@@ -744,12 +785,14 @@ class AST2SDFG:
             else:
                 memlet = generate_memlet(i, sdfg, self)
             # print("MEMLET: "+memlet)
-            add_memlet_write(substate, mapped_name, internal_sdfg,
-                             self.name_mapping[new_sdfg][local_name.name],
-                             memlet)
-            add_memlet_read(substate, mapped_name, internal_sdfg,
-                            self.name_mapping[new_sdfg][local_name.name],
-                            memlet)
+            if local_name.name in write_names:
+                add_memlet_write(substate, mapped_name, internal_sdfg,
+                                 self.name_mapping[new_sdfg][local_name.name],
+                                 memlet)
+            if local_name.name in read_names:
+                add_memlet_read(substate, mapped_name, internal_sdfg,
+                                self.name_mapping[new_sdfg][local_name.name],
+                                memlet)
         start_state = new_sdfg.add_state("Start_State_Function" + node.name,
                                          is_start_state=True)
         self.last_sdfg_states[new_sdfg] = start_state

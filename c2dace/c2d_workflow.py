@@ -211,7 +211,8 @@ def c2d_workflow(_dir,
     globalsdfg.save("tmp/" + filecore + "-promoted-notfused.sdfg")
 
     fuse_states(globalsdfg)
-
+    globalsdfg.save("tmp/broken2mm-fused.sdfg")
+    globalsdfg.from_file("tmp/broken2mm-fused.sdfg")
     globalsdfg.apply_transformations_repeated(PruneConnectors, strict=True)
     propagate_memlets_sdfg(globalsdfg)
 
@@ -251,6 +252,11 @@ def c2d_workflow(_dir,
 
         if xforms == 0:
             break
+    for sd in globalsdfg.all_sdfgs_recursive():
+        sd.apply_transformations_repeated(StateAssignElimination,
+                                          strict=True,
+                                          validate=False)
+
     globalsdfg.save("tmp/" + filecore + "-perf.sdfg")
     #print("AUTOOPT")
     #from dace.transformation import auto_optimize as aopt
