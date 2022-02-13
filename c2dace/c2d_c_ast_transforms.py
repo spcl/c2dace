@@ -288,8 +288,6 @@ class CondExtractor(NodeTransformer):
 
     def visit_IfStmt(self, node: IfStmt):
 
-        #if isinstance(node.index,IntLiteral):
-        #    return node
         if not hasattr(self, "count"):
             self.count = 0
         else:
@@ -312,14 +310,12 @@ class CondExtractor(NodeTransformer):
         newbody = []
 
         for child in node.body:
-            # res = [node for node in Node.walk(child) if isinstance(node, ArraySubscriptExpr)]
             lister = CondExtractorNodeLister()
             lister.visit(child)
             res = lister.nodes
             temp = self.count
             if res is not None:
                 for i in range(0, len(res)):
-                    #print("CALL:",res[i].name)
                     newbody.append(
                         DeclStmt(vardecl=[
                             VarDecl(name="tmp_if_" + str(temp), type=Int())
@@ -338,7 +334,7 @@ class ForDeclarerNodeLister(NodeVisitor):
         self.nodes: List[Node] = []
 
     def visit_ForStmt(self, node: ForStmt):
-        if isinstance(node.init[0], BinOp):
+        if isinstance(node.init[0], BinOp):# for(int i=0;) for (i=0;)
             self.nodes.append(node.init[0])
 
     def visit_BasicBlock(self, node: BasicBlock):

@@ -83,10 +83,11 @@ if __name__ == "__main__":
 
     args = get_cli_arguments()
     filecores = [
-        #"2mm",
         #"spmv",
         #"2mm",
-        #"3mm",
+        #"sparselu",
+        #"2mm",
+        "3mm",
         #"adi",
         #"atax",
         #"bicg",
@@ -104,52 +105,52 @@ if __name__ == "__main__":
         #"gramschmidt",
         #"heat",
         #"lu",  #issue out degree
-        "jacobi_1d",  #issue out degree
-        #"jacobi_2d",
-        #"gemm",
-        #"ludcmp",  #issue out degree
-        #"mvt",
-        #"nussinov",  #issue infer expr type
-        #"seidel",
-        #"symm",  #issue out degree
-        #"syr2k",
-        #"syrk",
-        #"trisolv",  #        -topological
-        #"trmm",  #issue  out degree
-    ]
-    filecores2 = [
-        #"2mm",
-        #"3mm",
-        #"adi",
-        #"atax",
-        #"bicg",
-        #"cholesky",  #issue out degree
-        #"correlation",
-        #"covariance",
-        ##"deriche",
-        #"doitgen",
-        #"durbin",  #issue n not defined
-        #"fdtd2d",
-        #"floyd_warshall",  #issue, infer expr type
-        #"gemm",
-        #"gemver",
-        #"gesummv",
-        #"gramschmidt",
-        #"heat",
-        #"lu",  #issue out degree
         #"jacobi_1d",  #issue out degree
         #"jacobi_2d",
         #"gemm",
         #"ludcmp",  #issue out degree
         #"mvt",
-        #"nussinov",  #issue infer expr type
+        #"nussinov",  #broken
         #"seidel",
         #"symm",  #issue out degree
         #"syr2k",
-        #"syrk",
-        #"trisolv",  #        -topological
-        #"trmm",  #issue  out degree
+        # "syrk",
+        # "trisolv",  #        -topological
+        # "trmm",  #issue  out degree
     ]
+    #    filecores2 = [
+    #"2mm",
+    #"3mm",
+    #"adi",
+    #"atax",
+    #"bicg",
+    #"cholesky",  #issue out degree
+    #"correlation",
+    #"covariance",
+    ##"deriche",
+    #"doitgen",
+    #"durbin",  #issue n not defined
+    #"fdtd2d",
+    #"floyd_warshall",  #issue, infer expr type
+    #"gemm",
+    #"gemver",
+    #"gesummv",
+    #"gramschmidt",
+    #"heat",
+    #"lu",  #issue out degree
+    #"jacobi_1d",  #issue out degree
+    #"jacobi_2d",
+    #"gemm",
+    #"ludcmp",  #issue out degree
+    #"mvt",
+    #"nussinov",  #issue infer expr type
+    #"seidel",
+    #"symm",  #issue out degree
+    #"syr2k",
+    #"syrk",
+    #"trisolv",  #        -topological
+    #"trmm",  #issue  out degree
+    #]
     autoopt = False
 
     filecore = os.path.splitext(os.path.basename(args.f))[0]

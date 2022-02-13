@@ -155,6 +155,12 @@ def c2d_workflow(_dir,
     print("saving ast after transformation to tmp/after.txt")
     with open("after.txt", "w") as f:
         f.write(dump(changed_ast, include_attributes=True))
+    with open("tmp/after.pseudo.cpp", "w") as f:
+        try:
+            f.write(get_pseudocode(changed_ast))
+        except Exception as e:
+            print("printing pseudocode failed!")
+            print(e)
     # for node in tu.cursor.get_children():
     # if node.spelling == "InitStressTermsForElems":
     # create_ast_copy(new_AST, node, filename)
@@ -192,8 +198,7 @@ def c2d_workflow(_dir,
 
     from dace import propagate_memlets_sdfg
     from dace.transformation.interstate import StateFusion, StateAssignElimination, InlineSDFG, LoopToMap, InlineTransients, HoistState, RefineNestedAccess
-    from dace.transformation.dataflow import MergeSourceSinkArrays, PruneConnectors, AugAssignToWCR, MapCollapse, TrivialMapElimination
-    from dace.transformation.transformation import strict_transformations
+    from dace.transformation.dataflow import MergeSourceSinkArrays, PruneConnectors, AugAssignToWCR, MapCollapse, TrivialMapElimination, GPUTransformMap, GPUTransformLocalStorage
     from dace.sdfg.utils import fuse_states
     from dace.transformation import helpers as xfh
     from dace.sdfg.analysis import scalar_to_symbol as scal2sym
@@ -203,78 +208,60 @@ def c2d_workflow(_dir,
         if isinstance(node, dace.nodes.NestedSDFG):
             if 'kernel_' in node.sdfg.name:
                 print(f'Hinting that {node.sdfg.name} should not be inlined')
-                node.no_inline = True
+                #node.no_inline = True
                 #node.instrument = dace.InstrumentationType.Timer
-
+    globalsdfg.save("tmp/" + filecore + "-untransformed.sdfg")
+    globalsdfg.validate()
     for sd in globalsdfg.all_sdfgs_recursive():
         promoted = scal2sym.promote_scalars_to_symbols(sd)
     globalsdfg.save("tmp/" + filecore + "-promoted-notfused.sdfg")
 
-    fuse_states(globalsdfg)
-    globalsdfg.save("tmp/broken2mm-fused.sdfg")
-    globalsdfg.from_file("tmp/broken2mm-fused.sdfg")
-    globalsdfg.apply_transformations_repeated(PruneConnectors, strict=True)
+    globalsdfg.simplify
+    globalsdfg.apply_transformations_repeated(PruneConnectors)
+    xfh.split_interstate_edges(globalsdfg)
     propagate_memlets_sdfg(globalsdfg)
-
-    strict_reduced = [
-        xf for xf in strict_transformations()
-        if 'Redundant' not in xf.__name__ and 'OutMerge' not in xf.__name__
-    ]
 
     for sd in globalsdfg.all_sdfgs_recursive():
         promoted = scal2sym.promote_scalars_to_symbols(sd)
         print(sd.label, 'promoting', promoted)
-
+    globalsdfg.save("tmp/" + filecore + "-nomap.sdfg")
     xform_types = [
         TrivialMapElimination, HoistState, InlineTransients, AugAssignToWCR
-    ] + strict_reduced
+    ]
     for i in range(4):
         propagate_memlets_sdfg(globalsdfg)
-        globalsdfg.apply_strict_transformations()
+        globalsdfg.simplify()
         xforms = globalsdfg.apply_transformations_repeated(xform_types,
-                                                           strict=True,
                                                            validate_all=True)
 
         # Strict transformations and loop parallelization
         transformed = True
         while transformed:
-            globalsdfg.apply_transformations_repeated(xform_types, strict=True)
+            globalsdfg.apply_transformations_repeated(xform_types)
             for sd in globalsdfg.all_sdfgs_recursive():
                 xfh.split_interstate_edges(sd)
+            num = globalsdfg.apply_transformations_repeated(RefineNestedAccess)
+            print("Refine nested acesses:", num)
             l2ms = globalsdfg.apply_transformations_repeated(LoopToMap,
-                                                             strict=True,
                                                              validate=False)
             transformed = l2ms > 0
 
-        globalsdfg.apply_transformations_repeated(LoopToMap,
-                                                  strict=True,
-                                                  validate=False)
+        globalsdfg.apply_transformations_repeated(LoopToMap, validate=False)
 
         if xforms == 0:
             break
     for sd in globalsdfg.all_sdfgs_recursive():
         sd.apply_transformations_repeated(StateAssignElimination,
-                                          strict=True,
                                           validate=False)
 
     globalsdfg.save("tmp/" + filecore + "-perf.sdfg")
-    #print("AUTOOPT")
-    #from dace.transformation import auto_optimize as aopt
-    #if autoopt:
-    #aopt.auto_optimize(globalsdfg, dace.DeviceType.CPU)
-    #globalsdfg.save("tmp/" + filecore + "-opt.sdfg")
-    code = globalsdfg.compile("tmp/" + filecore + '-dace-auto-new.cc')
-
-    import subprocess
-
-    source_file_name = "tmp/" + filecore + fileextension
-    compiled_file_name = "tmp/" + filecore + ".out"
-    transformed_file_name = "tmp/" + filecore + "-dace.cpp"
-    compiled_transformed_file_name = "tmp/" + filecore + "-dace.out"
-
-    #print("compiling " + source_file_name + " ...")
-    #code, output = execute_command(
-    #    ["g++", source_file_name, "-o", compiled_file_name] +
-    #    cfg.clang_cli_arguments)
-
-    #print(output)
+    from dace.transformation.auto import auto_optimize as aopt
+    aopt.move_small_arrays_to_stack(globalsdfg)
+    aopt.make_transients_persistent(globalsdfg, dace.DeviceType.CPU)
+    for sdfg in globalsdfg.all_sdfgs_recursive():
+        sdfg.openmp_sections = False
+    globalsdfg.save("tmp/" + filecore + "-opt.sdfg")
+    for codeobj in globalsdfg.generate_code():
+        if codeobj.title == 'Frame':
+            with open("tmp/" + filecore + '-dace.cc', 'w') as fp:
+                fp.write(codeobj.clean_code)

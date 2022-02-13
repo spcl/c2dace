@@ -60,6 +60,132 @@ def raise_exception(error_message):
     raise UserWarning(error_message)
 
 
+def make_nested_sdfg_with_no_context_change(top_sdfg: Cursor, new_sdfg: Cursor,
+                                            name: str, used_variables, node,
+                                            state):
+    local_variables_new_sdfg_names = []
+    local_variables_names = []
+    substate = top_sdfg.add_state("state" + name)
+    used_vars = [
+        node for node in walk(node.body) if isinstance(node, DeclRefExpr)
+    ]
+    binop_nodes = [node for node in walk(node.body) if isinstance(node, BinOp)]
+    write_nodes = [node for node in binop_nodes if node.op == "="]
+    write_vars = [node.lvalue for node in write_nodes]
+    read_vars = copy.deepcopy(used_vars)
+    for i in write_vars:
+        if i in read_vars:
+            read_vars.remove(i)
+        #print(write_vars)
+        #print(read_vars)
+    write_vars = remove_duplicates(write_vars)
+    read_vars = remove_duplicates(read_vars)
+    used_vars = remove_duplicates(used_vars)
+    write_names = []
+    read_names = []
+
+    for i in write_vars:
+        if state.name_mapping.get(top_sdfg).get(i.name) in top_sdfg.arrays:
+            write_names.append(i.name)
+    for i in read_vars:
+        if state.name_mapping.get(top_sdfg).get(i.name) in top_sdfg.arrays:
+            read_names.append(i.name)
+    for i in top_sdfg.arrays:
+        found = False
+        for j in used_variables:
+            # print("USED:",j.name)
+            if state.name_mapping.get(top_sdfg).get(j.name) == i:
+                # print(i,j.name)
+                found = True
+                global_value = False
+
+                break
+        if not found:
+            for j in state.globalsdfg.arrays:
+                if state.name_mapping.get(top_sdfg).get(j) == i:
+                    found = True
+                    global_value = True
+                    break
+        if not found:
+            # print("Skipping:", i, j.name, )
+            continue
+        else:
+            # print("NOT Skipping:", i, j.name, )
+            if global_value:
+                j = DeclRefExpr(name=j)
+            state.name_mapping[new_sdfg][j.name] = find_new_array_name(
+                state.all_array_names, j.name)
+            state.all_array_names.append(state.name_mapping[new_sdfg][j.name])
+            m = top_sdfg.arrays.get(i)
+            if m.total_size == 1:
+                new_sdfg.add_scalar(state.name_mapping[new_sdfg][j.name],
+                                    m.dtype, m.storage, False)
+            else:
+                new_sdfg.add_array(state.name_mapping[new_sdfg][j.name],
+                                   shape=m.shape,
+                                   dtype=m.dtype,
+                                   transient=False,
+                                   strides=m.strides,
+                                   offset=m.offset)
+            local_variables_new_sdfg_names.append(
+                state.name_mapping[new_sdfg][j.name])
+            local_variables_names.append(j.name)
+            if j.name in state.libstates:
+                if j.name not in write_names:
+                    write_names.append(j.name)
+                if j.name not in read_names:
+                    read_names.append(j.name)
+
+    sym_dict = {}
+    for i in top_sdfg.symbols:
+        sym_dict[i] = i
+    # for i in top_sdfg.arrays:
+    # m = top_sdfg.arrays[i]
+    # print("ARS no context change:", i, m.shape, m.total_size)
+    # print(sym_dict)
+    new_in_names = []
+    new_out_names = []
+    for i in write_names:
+        new_out_names.append(state.name_mapping[new_sdfg][i])
+    for i in read_names:
+        new_in_names.append(state.name_mapping[new_sdfg][i])
+    internal_sdfg = substate.add_nested_sdfg(new_sdfg,
+                                             top_sdfg,
+                                             new_in_names,
+                                             new_out_names,
+                                             symbol_mapping=sym_dict)
+    for i in local_variables_names:
+        shape = top_sdfg.arrays[state.name_mapping[top_sdfg][i]].shape
+        memlet = "0"
+        done = False
+        first = True
+        if len(shape) == 1:
+            if shape[0] == 1:
+                done = True
+        if isinstance(top_sdfg.arrays[state.name_mapping[top_sdfg][i]],
+                      Scalar):
+            memlet = ""
+            #print("MEMLET fixes:",i)
+            done = True
+        if not done:
+            for k in shape:
+                if first:
+                    memlet = "0:" + str(k)
+                    first = False
+                else:
+                    memlet = memlet + ",0:" + str(k)
+        if i in read_names:
+            add_memlet_read(substate, state.name_mapping[top_sdfg][i],
+                            internal_sdfg, state.name_mapping[new_sdfg][i],
+                            memlet)
+        if i in write_names:
+            add_memlet_write(substate, state.name_mapping[top_sdfg][i],
+                             internal_sdfg, state.name_mapping[new_sdfg][i],
+                             memlet)
+
+    return substate
+
+
 def add_tasklet(substate: SDFGState, name: str, vars_in: Set[str],
                 vars_out: Set[str], code: str):
     tasklet = substate.add_tasklet(name="T" + name,
@@ -559,7 +685,6 @@ class AST2SDFG:
         if node.body is None:
             print("Empty function")
             return
-        #print ("BLA:",node.result_type)
         used_vars = [
             node for node in walk(node.body) if isinstance(node, DeclRefExpr)
         ]
@@ -572,8 +697,6 @@ class AST2SDFG:
         for i in write_vars:
             if i in read_vars:
                 read_vars.remove(i)
-        print(write_vars)
-        print(read_vars)
         write_vars = remove_duplicates(write_vars)
         read_vars = remove_duplicates(read_vars)
         used_vars = remove_duplicates(used_vars)
@@ -590,22 +713,16 @@ class AST2SDFG:
         if self.last_call_expression.get(sdfg) is not None:
             variables_in_call = self.last_call_expression[sdfg]
 
-        # creating new arrays for nested sdfg
         inouts_in_new_sdfg = []
         ins_in_new_sdfg = []
         outs_in_new_sdfg = []
-
-        ind_count = 0
-
         var2 = []
         literals = []
         literal_values = []
         par2 = []
-
         symbol_arguments = []
 
         for arg_i, variable in enumerate(variables_in_call):
-            # print(i.__class__)
             variable = self.strip(variable)
 
             if isinstance(variable, Literal) or variable.name == "LITERAL":
@@ -625,10 +742,6 @@ class AST2SDFG:
         for lit, litval in zip(literals, literal_values):
             local_name = lit
             self.translate(local_name, new_sdfg)
-            #print("LOCAL_NAME SPECIAL: ",local_name.name,local_name.__class__)
-            # self.name_mapping[(new_sdfg, local_name.name)] = find_new_array_name(self.all_array_names,
-            #                                                                     local_name.name)
-            #self.all_array_names.append(self.name_mapping[(new_sdfg, local_name.name)])
             assigns.append(
                 BinOp(lvalue=DeclRefExpr(name=local_name.name),
                       rvalue=litval,
@@ -642,8 +755,6 @@ class AST2SDFG:
                       op="="))
 
         for variable_in_call in variables_in_call:
-            # print(i.name,j,self.name_mapping.get((sdfg,i)))
-            #print("VARS:", i.name,self.name_mapping.get((sdfg, i.name)))
             all_arrays = self.get_arrays_in_context(sdfg)
 
             sdfg_name = self.name_mapping.get(sdfg).get(variable_in_call.name)
@@ -687,7 +798,9 @@ class AST2SDFG:
                         else:
                             new_sdfg.add_array(
                                 self.name_mapping[new_sdfg][local_name.name],
-                                shape, array.dtype, array.storage, False)
+                                shape=shape,
+                                dtype=array.dtype,
+                                transient=False)
             if not matched:
                 for array_name, array in all_arrays.items():
                     if array_name in [globalsdfg_name]:
@@ -727,12 +840,9 @@ class AST2SDFG:
                                     self.name_mapping[new_sdfg][
                                         local_name.name], shape, array.dtype,
                                     array.storage, False)
-        # Preparing symbol dictionary for nested sdfg
         sym_dict = {}
         for i in sdfg.symbols:
             sym_dict[i] = i
-        #print("FUNC: ",sym_dict)
-        #if sdfg is not self.globalsdfg:
         for i in self.libstates:
             self.name_mapping[new_sdfg][i] = find_new_array_name(
                 self.all_array_names, i)
@@ -749,7 +859,7 @@ class AST2SDFG:
                                                  ins_in_new_sdfg,
                                                  outs_in_new_sdfg,
                                                  symbol_mapping=sym_dict)
-        #if sdfg is not self.globalsdfg:
+
         for i in self.libstates:
             memlet = "0"
             add_memlet_write(substate, self.name_mapping[sdfg][i],
@@ -765,7 +875,6 @@ class AST2SDFG:
             if self.name_mapping.get(sdfg).get(i.name) is not None:
                 var = sdfg.arrays.get(self.name_mapping[sdfg][i.name])
                 mapped_name = self.name_mapping[sdfg][i.name]
-            # TODO: FIx symbols in function calls
             elif i.name in sdfg.symbols:
                 var = i.name
                 mapped_name = i.name
@@ -777,14 +886,12 @@ class AST2SDFG:
             else:
                 raise NameError("Variable name not found: " + i.name)
 
-            # print("Context change:",i.name," ",var.shape)
             if not hasattr(var, "shape") or len(var.shape) == 0:
                 memlet = ""
             elif (len(var.shape) == 1 and var.shape[0] == 1):
                 memlet = "0"
             else:
                 memlet = generate_memlet(i, sdfg, self)
-            # print("MEMLET: "+memlet)
             if local_name.name in write_names:
                 add_memlet_write(substate, mapped_name, internal_sdfg,
                                  self.name_mapping[new_sdfg][local_name.name],
@@ -796,7 +903,6 @@ class AST2SDFG:
         start_state = new_sdfg.add_state("Start_State_Function" + node.name,
                                          is_start_state=True)
         self.last_sdfg_states[new_sdfg] = start_state
-        # make_nested_sdfg_with_context_change(sdfg, new_sdfg, node.name, used_vars, self)
         for i in assigns:
             self.translate(i, new_sdfg)
         final_state = new_sdfg.add_state("Final_State_Function" + node.name)
@@ -1095,21 +1201,29 @@ class AST2SDFG:
                         sdfg, self.name_mapping).write_tasklet_code(
                             node.iter[0].rvalue)
         entry = {iter_name: increment}
-        begin_loop_state = sdfg.add_state("BeginLoopState" + str(line))
-        end_loop_state = sdfg.add_state("EndLoopState" + str(line))
-        self.last_sdfg_states[sdfg] = begin_loop_state
-        self.last_loop_continue[sdfg] = end_loop_state
-        self.translate(node.body, sdfg)
+        #begin_loop_state = sdfg.add_state("BeginLoopState" + str(line))
+        #end_loop_state = sdfg.add_state("EndLoopState" + str(line))
+        #self.last_sdfg_states[sdfg] = begin_loop_state
+        #self.last_loop_continue[sdfg] = end_loop_state
+        #self.translate(node.body, sdfg)
 
-        sdfg.add_edge(self.last_sdfg_states[sdfg], end_loop_state,
-                      dace.InterstateEdge())
-        #loop_state = make_nested_sdfg_with_no_context_change(
-        #    sdfg, new_sdfg, name, used_vars, self)
+        #sdfg.add_edge(self.last_sdfg_states[sdfg], end_loop_state,
+        #             dace.InterstateEdge())
+        loop_state = make_nested_sdfg_with_no_context_change(
+            sdfg, new_sdfg, name, used_vars, node, self)
+        self.translate(node.body, new_sdfg)
+
         self.last_sdfg_states[sdfg] = final_substate
+        #sdfg.add_edge(guard_substate, begin_loop_state,
+        #              dace.InterstateEdge(condition))
+        #sdfg.add_edge(end_loop_state, guard_substate,
+        #              dace.InterstateEdge(assignments=entry))
+        #sdfg.add_edge(guard_substate, final_substate,
+        #              dace.InterstateEdge("not " + condition))
 
-        sdfg.add_edge(guard_substate, begin_loop_state,
+        sdfg.add_edge(guard_substate, loop_state,
                       dace.InterstateEdge(condition))
-        sdfg.add_edge(end_loop_state, guard_substate,
+        sdfg.add_edge(loop_state, guard_substate,
                       dace.InterstateEdge(assignments=entry))
         sdfg.add_edge(guard_substate, final_substate,
                       dace.InterstateEdge("not " + condition))
@@ -1301,7 +1415,8 @@ class AST2SDFG:
                 augmented_call.hasret = True
                 self.call2sdfg(augmented_call, sdfg)
                 return
-
+        if node.op == "**":
+            print("ERROR HERE")
         self.tasklet_count += 1
 
         outputnodefinder = FindOutputNodesVisitor()

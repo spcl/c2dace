@@ -657,16 +657,9 @@ def create_own_ast(cnode, files):
     current_file = cnode.location.file
 
     if current_file is not None and str(current_file) not in files:
-        #print("POSITON RETURN:", cnode.location.file, cnode.location.line)
         return
-    #
-    #print("POSITON PARSE:", cnode.location.file, cnode.location.line)
     if cnode.kind in supported_cursor_kinds:
-        #try:
-        #print(cnode.kind)
         node = supported_cursor_kinds[cnode.kind](cnode, files)
-        #for i in node.__dict__:
-        #    print(i)
         if "type" in node._attributes and not hasattr(node, "type"):
             node.type = get_c_type_from_clang_type(cnode.type)
 
@@ -678,18 +671,13 @@ def create_own_ast(cnode, files):
             assert isinstance(node.type, Type)
 
         return node
-    #except IndexError:
-    #    list_all(cnode)
-    #    print("EXPLOSION!")
-    #    raise Exception("ARGH!")
+
     elif cnode.kind in ignored_cursor_kinds:
         print(UserWarning("Ignored cursor kind", cnode.kind))
         return
     elif cnode.kind in unsupported_cursor_kinds:
-        #list_all(cnode)
         print(Warning(f"Unsupported {cnode.kind} at {cnode.location.line}"))
         return
-        #raise ValueError("Cursor Kind Unsupported: " + str(cnode.kind) + " " + str(cnode.location.line))
     raise Exception("How did you even get here?")
 
 
