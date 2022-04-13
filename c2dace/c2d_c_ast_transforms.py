@@ -268,6 +268,29 @@ class CallExtractor(NodeTransformer):
         return BasicBlock(body=newbody)
 
 
+class PowerOptimization(NodeTransformer):
+    def visit_CallExpr(self, node: CallExpr):
+        # TODO do a deepcopy of the node
+        if node.name.name != "pow":
+            return node
+
+        if len(node.args) != 2:
+            return node
+
+        if not isinstance(node.args[1], IntLiteral):
+            return node
+
+        value = node.args[1].value[0]
+
+        if value != '2':
+            return node
+
+        lnode = copy.deepcopy(node.args[0])
+        rnode = copy.deepcopy(node.args[0])
+
+        return BinOp(op="*", lvalue=lnode, rvalue=rnode)
+
+
 class CondExtractorNodeLister(NodeVisitor):
     def __init__(self):
         self.nodes: List[Node] = []
@@ -915,3 +938,19 @@ class CXXClassToStruct(NodeTransformer):
                                     [self.visit(a) for a in node.args])
 
         return self.generic_visit(node)
+
+
+class PrinterVisitor(NodeVisitor):
+    def visit_VarDecl(self, node: VarDecl):
+        print(node.name + " = ", end='')
+        if hasattr(node, "init"):
+            print(node.init)
+        else:
+            print()
+
+    def visit_BasicBlock(self, node: BasicBlock):
+        for child in node.body:
+            if not isinstance(child, DeclStmt):
+                print(child)
+            self.visit(child)
+        return node

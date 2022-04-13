@@ -111,13 +111,14 @@ def c2d_workflow(_dir,
 
         with open("tmp/before.pseudo.cpp", "w") as f:
             try:
-                f.write(c2d_ast_output.get_pseudocode(changed_ast))
+                f.write(get_pseudocode(changed_ast))
             except Exception as e:
                 print("printing pseudocode failed!")
                 #raise e
                 print(e)
 
     transformations = [
+        PowerOptimization,
         InsertMissingBasicBlocks,
         CXXClassToStruct,
         FlattenStructs,
@@ -134,8 +135,14 @@ def c2d_workflow(_dir,
         ForDeclarer,
     ]
 
+    debug = False
+
     for transformation in transformations:
         changed_ast = transformation().visit(changed_ast)
+        if debug:
+            print("="*10)
+            print(transformation)
+            PrinterVisitor().visit(changed_ast) 
 
     type_validator = ValidateNodeTypes()
     changed_ast = type_validator.visit(changed_ast)
@@ -147,20 +154,11 @@ def c2d_workflow(_dir,
             f.write(dump(changed_ast, include_attributes=True))
         with open("tmp/after.pseudo.cpp", "w") as f:
             try:
-                f.write(c2d_ast_output.get_pseudocode(changed_ast))
+                f.write(get_pseudocode(changed_ast))
             except Exception as e:
                 print("printing pseudocode failed!")
                 print(e)
 
-    print("saving ast after transformation to tmp/after.txt")
-    with open("after.txt", "w") as f:
-        f.write(dump(changed_ast, include_attributes=True))
-    with open("tmp/after.pseudo.cpp", "w") as f:
-        try:
-            f.write(get_pseudocode(changed_ast))
-        except Exception as e:
-            print("printing pseudocode failed!")
-            print(e)
     # for node in tu.cursor.get_children():
     # if node.spelling == "InitStressTermsForElems":
     # create_ast_copy(new_AST, node, filename)
@@ -184,6 +182,7 @@ def c2d_workflow(_dir,
     globalsdfg.add_scalar(name_mapping[globalsdfg]["c2d_retval"],
                           dace.int32,
                           transient=True)
+
     last_call_expression = [
         DeclRefExpr(name="argc_loc"),
         DeclRefExpr(name="argv_loc"),
@@ -212,6 +211,7 @@ def c2d_workflow(_dir,
                 #node.instrument = dace.InstrumentationType.Timer
     globalsdfg.save("tmp/" + filecore + "-untransformed.sdfg")
     globalsdfg.validate()
+    counter = 0
     for sd in globalsdfg.all_sdfgs_recursive():
         promoted = scal2sym.promote_scalars_to_symbols(sd)
     globalsdfg.save("tmp/" + filecore + "-promoted-notfused.sdfg")
@@ -265,3 +265,5 @@ def c2d_workflow(_dir,
         if codeobj.title == 'Frame':
             with open("tmp/" + filecore + '-dace.cc', 'w') as fp:
                 fp.write(codeobj.clean_code)
+
+    globalsdfg.compile()

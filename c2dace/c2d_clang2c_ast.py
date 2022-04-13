@@ -233,6 +233,7 @@ def bin_op(cnode, files):
     except:
         toks = [tok.spelling for tok in list(children[0].get_tokens())]
         #print(toks)
+        print(cnode.location.line)
         raise Exception("EXPLOSION BINOP!")
     nodes = [create_own_ast(i, files) for i in cnode.get_children()]
     #print("Op: ",operator," cnode loc: ",cnode.location.line)
