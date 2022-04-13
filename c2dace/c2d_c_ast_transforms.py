@@ -270,7 +270,6 @@ class CallExtractor(NodeTransformer):
 
 class PowerOptimization(NodeTransformer):
     def visit_CallExpr(self, node: CallExpr):
-        # TODO do a deepcopy of the node
         if node.name.name != "pow":
             return node
 
