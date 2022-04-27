@@ -160,33 +160,6 @@ void generate_matrix(int nx, int ny, int nz, HPC_Sparse_Matrix **A, double **x, 
 }
 
 
-int dump_matlab_matrix( HPC_Sparse_Matrix *A, int rank) {
-  const int nrow = A->local_nrow;
-  int start_row = nrow*rank; // Each processor gets a section of a chimney stack domain
-
-  FILE * handle = 0;
-  if (rank==0) 
-    handle = fopen("mat0.dat", "w");
-  else if (rank==1)
-    handle = fopen("mat1.dat", "w");
-  else if (rank==2)
-    handle = fopen("mat2.dat", "w");
-  else if (rank==3)
-    handle = fopen("mat3.dat", "w");
-  else return(0);
-
-  for (int i=0; i< nrow; i++) {
-      const double * const cur_vals = A->ptr_to_vals_in_row[i];
-      const int    * const cur_inds = A->ptr_to_inds_in_row[i];
-      const int cur_nnz = A->nnz_in_row[i];
-      for (int j=0; j< cur_nnz; j++) fprintf(handle, " %d %d %22.16e\n",start_row+i+1,cur_inds[j]+1,cur_vals[j]);
-    }
-
-  fclose(handle);
-  return(0);
-}
-
-
 int HPC_sparsemv( HPC_Sparse_Matrix *A, 
 		 const double * const x, double * const y)
 {
@@ -283,18 +256,11 @@ int main(int argc, char *argv[])
   int ione = 1;
   int nx,ny,nz;
 
-
-  int size = 1; // Serial case (not using MPI)
-  int rank = 0; 
-
   nx = 13;
   ny = 42;
   nz = 23;
 
   generate_matrix(nx, ny, nz, &A, &x, &b, &xexact);
-
-  int dump_matrix = 0;
-  if (dump_matrix && size<=4) dump_matlab_matrix(A, rank);
 
   int* niters = calloc(1, sizeof(int));
   double* normr = calloc(1, sizeof(double));
@@ -305,26 +271,23 @@ int main(int argc, char *argv[])
 
 	if (ierr) printf("Error in call to CG: %d.\n", ierr);
 
-  if (rank==0)  // Only PE 0 needs to compute and report timing results
-    {
-      double fniters = *niters; 
-      double fnrow = A->total_nrow;
-      double fnnz = A->total_nnz;
-      double fnops_ddot = fniters*4*fnrow;
-      double fnops_waxpby = fniters*6*fnrow;
-      double fnops_sparsemv = fniters*2*fnnz;
-      double fnops = fnops_ddot+fnops_waxpby+fnops_sparsemv;
+  double fniters = *niters; 
+  double fnrow = A->total_nrow;
+  double fnnz = A->total_nnz;
+  double fnops_ddot = fniters*4*fnrow;
+  double fnops_waxpby = fniters*6*fnrow;
+  double fnops_sparsemv = fniters*2*fnnz;
+  double fnops = fnops_ddot+fnops_waxpby+fnops_sparsemv;
 
-      printf("Dimensions: nx=%d, ny=%d, nz=%d\n",nx,ny,nz);
-      printf("Number of iterations: %d\n", *niters);
-      printf("Final residual: %e\n", *normr);
+  printf("Dimensions: nx=%d, ny=%d, nz=%d\n",nx,ny,nz);
+  printf("Number of iterations: %d\n", *niters);
+  printf("Final residual: %e\n", *normr);
 
-      printf("FLOPS Summary:\n");
-      printf("Total   : %e\n",fnops);
-      printf("DDOT    : %e\n",fnops_ddot);
-      printf("WAXPBY  : %e\n",fnops_waxpby);
-      printf("SPARSEMV: %e\n",fnops_sparsemv);
-    }
+  printf("FLOPS Summary:\n");
+  printf("Total   : %e\n",fnops);
+  printf("DDOT    : %e\n",fnops_ddot);
+  printf("WAXPBY  : %e\n",fnops_waxpby);
+  printf("SPARSEMV: %e\n",fnops_sparsemv);
 
   // Compute difference between known exact solution and computed solution
   // All processors are needed here.
