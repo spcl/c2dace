@@ -512,6 +512,7 @@ class FunctionLister(NodeVisitor):
         self.function_names: Set[str] = set()
         self.defined_function_names: Set[str] = set()
         self.undefined_function_names: Set[str] = set()
+        self.function_is_void: Set[str] = set()
 
     def visit_AST(self, node: AST):
         self.generic_visit(node)
@@ -524,11 +525,17 @@ class FunctionLister(NodeVisitor):
         if node.body is not None and node.body != []:
             self.defined_function_names.add(node.name)
 
+        if isinstance(node.result_type, Void):
+            self.function_is_void.add(node.name)
+
     def is_defined(self, function_name: str) -> bool:
         return function_name in self.defined_function_names
 
     def is_declared(self, function_name: str) -> bool:
         return function_name in self.function_names
+
+    def is_void(self, function_name: str) -> bool:
+        return function_name in self.function_is_void
 
 
 class MoveReturnValueToArguments(NodeTransformer):
@@ -554,7 +561,7 @@ class MoveReturnValueToArguments(NodeTransformer):
 
     def visit_CallExpr(self, node: CallExpr):
         if self.function_lister.is_defined(node.name.name):
-            if not isinstance(node.type, Void):
+            if not self.function_lister.is_void(node.name.name):
                 node.args.append(
                     DeclRefExpr(name="NULL",
                                 type=Pointer(pointee_type=Void())))
@@ -702,9 +709,13 @@ class ReplaceStructDeclStatements(NodeTransformer):
             replacement.type = container_expr.type.inject_type(
                 replacement.lvalue.type)
             return replacement
+        if isinstance(container_expr, ParenExpr):
+            expr = copy.deepcopy(container_expr.expr)
+            out_expr = self.replace_container_expr(expr, desired_field)
+            return out_expr
 
         raise Exception("cannot replace container expression: ",
-                        container_expr)
+                        container_expr, " at line ", container_expr.lineno)
 
     def visit_AST(self, node: AST):
         self.structdefs = {sd.name: sd for sd in node.structdefs}
@@ -724,6 +735,7 @@ class ReplaceStructDeclStatements(NodeTransformer):
         if hasattr(node.lvalue, "type") and hasattr(node.rvalue, "type"):
             if node.lvalue.type.is_struct_like():
                 if node.lvalue.type == node.rvalue.type:
+                    # assign a struct to another
                     struct = node.lvalue.type.get_chain_end()
 
                     if node.op == "=":
@@ -748,6 +760,9 @@ class ReplaceStructDeclStatements(NodeTransformer):
                             return [
                                 self.visit(s) for s in replacement_statements
                             ]
+                elif isinstance(node.rvalue, CallExpr) and (node.rvalue.name.name == "malloc" or node.rvalue.name.name == "calloc"):
+                    # allocate a struct, do nothing because we don't use pointers
+                    return []
 
         return self.generic_visit(node)
 
