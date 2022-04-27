@@ -589,6 +589,8 @@ class AST2SDFG:
 
     def translate(self, node: Node, sdfg: SDFG):
         if node.__class__ in self.ast_elements:
+            #print('-'*10)
+            #print(self.ast_elements[node.__class__])
             self.ast_elements[node.__class__](node, sdfg)
         else:
             print("WARNING:", node.__class__.__name__)
@@ -692,7 +694,15 @@ class AST2SDFG:
             node for node in walk(node.body) if isinstance(node, BinOp)
         ]
         write_nodes = [node for node in binop_nodes if node.op == "="]
-        write_vars = [node.lvalue for node in write_nodes]
+        write_vars = []
+        for n in write_nodes:
+            if isinstance(n.lvalue, DeclRefExpr):
+                write_vars.append(n.lvalue)
+            elif isinstance(n.lvalue, ParenExpr):
+                write_vars.append(n.lvalue.expr)
+            else:
+                print("WARNING: skipping unsupported lvalue ", n.lvalue)
+
         read_vars = copy.deepcopy(used_vars)
         for i in write_vars:
             if i in read_vars:
@@ -1356,7 +1366,12 @@ class AST2SDFG:
     def malloc2sdfg(self, node: BinOp, sdfg: SDFG):
         varname = node.lvalue.name
         #print("VARNAME:", varname)
-        rvalue = node.rvalue.expr.args[0]
+
+        # sanity check
+        if not isinstance(node.rvalue, CallExpr):
+            print("WARNING: malloc2sdfg: rvalue is not a call")
+
+        rvalue = node.rvalue.args[0]
 
         if self.incomplete_arrays.get((sdfg, varname)) is not None:
             oldnode = self.incomplete_arrays.get((sdfg, varname))
