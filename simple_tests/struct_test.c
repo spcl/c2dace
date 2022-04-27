@@ -10,9 +10,8 @@ typedef struct example_struct example;
 
 int main(int argc, char** argv) {
 
-	example **ex;
+	example **ex = malloc(sizeof(example*));
 	(*ex) = malloc(sizeof(example));
-	//example *ex = malloc(sizeof(example));
 
 	(*ex)->start = 4;
 	(*ex)->end = 3;

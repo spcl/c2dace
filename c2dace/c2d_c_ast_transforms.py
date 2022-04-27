@@ -691,6 +691,19 @@ class ReplaceStructDeclStatements(NodeTransformer):
         if isinstance(container_expr, DeclRefExpr):
             replacement_name, replacement_type = self.split_struct_type(
                 container_expr.type, container_expr.name)[desired_field]
+
+            if isinstance(replacement_type, Pointer):
+                # need to wrap in ParenExpr when deallocating pointer
+                return ParenExpr(
+                        expr=UnOp(
+                            op="*",
+                            postfix=False,
+                            type=replacement_type,
+                            lvalue=DeclRefExpr(name=replacement_name, type=replacement_type)
+                        ),
+                        type=replacement_type
+                    )
+
             return DeclRefExpr(name=replacement_name, type=replacement_type)
         if isinstance(container_expr, ArraySubscriptExpr):
             replacement = copy.deepcopy(container_expr)
@@ -760,19 +773,37 @@ class ReplaceStructDeclStatements(NodeTransformer):
                             return [
                                 self.visit(s) for s in replacement_statements
                             ]
-                elif isinstance(node.rvalue, CallExpr) and (node.rvalue.name.name == "malloc" or node.rvalue.name.name == "calloc"):
-                    # allocate a struct, do nothing because we don't use pointers
+                elif isinstance(node.rvalue, CallExpr) and node.rvalue.name.name == "malloc":
+                    # do nothing because it is a pointer
                     return []
 
         return self.generic_visit(node)
 
     def visit_VarDecl(self, node: VarDecl):
-        if node.type.is_struct_like():
-            splits = self.split_struct_type(node.type, node.name)
-            if splits is not None:
-                return [VarDecl(name=n, type=t) for (n, t) in splits.values()]
+        # only process structs
+        if not node.type.is_struct_like():
+            return self.generic_visit(node)
 
-        return self.generic_visit(node)
+        # only valid and defined structs
+        splits = self.split_struct_type(node.type, node.name)
+        if splits is None:
+            return self.generic_visit(node)
+
+        # check if the struct is initialized as malloc
+        if not isinstance(node.init, CallExpr):
+            return [VarDecl(name=n, type=t) for (n, t) in splits.values()]
+
+        if node.init.name.name != "malloc":
+            return [VarDecl(name=n, type=t) for (n, t) in splits.values()]
+
+        mallocCall =CallExpr(
+                type=Pointer(pointee_type=Void()),
+                args=[IntLiteral(value="1")],
+                name=DeclRefExpr(name="malloc", type=Pointer(pointee_type=Void()))
+            )
+
+        return [VarDecl(name=n, type=t, init=mallocCall) for (n, t) in splits.values()]
+
 
     def visit_DeclStmt(self, node: DeclStmt):
         replacement_stmts = []

@@ -8,5 +8,5 @@ int main(int argc, char** argv) {
 }
 
 void setI(double* i) {
-	*i = 5.0;
+	(*i) = 5.0;
 }
