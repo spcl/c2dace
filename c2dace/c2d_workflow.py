@@ -135,14 +135,17 @@ def c2d_workflow(_dir,
         ForDeclarer,
     ]
 
-    debug = False
+    debug = True
 
     for transformation in transformations:
-        changed_ast = transformation().visit(changed_ast)
         if debug:
             print("="*10)
             print(transformation)
-            PrinterVisitor().visit(changed_ast) 
+            if transformation == CondExtractor:
+                with open("tmp/middle.pseudo.cpp", "w") as f:
+                    f.write(get_pseudocode(changed_ast))
+            #PrinterVisitor().visit(changed_ast) 
+        changed_ast = transformation().visit(changed_ast)
 
     type_validator = ValidateNodeTypes()
     changed_ast = type_validator.visit(changed_ast)
@@ -211,7 +214,6 @@ def c2d_workflow(_dir,
                 #node.instrument = dace.InstrumentationType.Timer
     globalsdfg.save("tmp/" + filecore + "-untransformed.sdfg")
     globalsdfg.validate()
-    counter = 0
     for sd in globalsdfg.all_sdfgs_recursive():
         promoted = scal2sym.promote_scalars_to_symbols(sd)
     globalsdfg.save("tmp/" + filecore + "-promoted-notfused.sdfg")
