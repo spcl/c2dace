@@ -696,12 +696,14 @@ class AST2SDFG:
         write_nodes = [node for node in binop_nodes if node.op == "="]
         write_vars = []
         for n in write_nodes:
-            if isinstance(n.lvalue, DeclRefExpr):
-                write_vars.append(n.lvalue)
-            elif isinstance(n.lvalue, ParenExpr):
-                write_vars.append(n.lvalue.expr)
+            tmp = n.lvalue
+            while isinstance(tmp, ParenExpr):
+                tmp = tmp.expr
+
+            if isinstance(tmp, DeclRefExpr):
+                write_vars.append(tmp)
             else:
-                print("WARNING: skipping unsupported lvalue ", n.lvalue)
+                print("WARNING: skipping unsupported lvalue ", tmp)
 
         read_vars = copy.deepcopy(used_vars)
         for i in write_vars:
@@ -1422,8 +1424,7 @@ class AST2SDFG:
             self.all_array_names.append(self.name_mapping[sdfg][oldnode.name])
 
         else:
-            raise_exception(
-                NameError(varname + " not in incomplete array list"))
+            print("WARNING allocating ", varname, " that is not marked as needed (this could be correct)")
 
     def binop2sdfg(self, node: BinOp, sdfg: SDFG):
         node.location_line = self.tasklet_count

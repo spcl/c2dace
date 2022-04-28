@@ -783,7 +783,7 @@ class ReplaceStructDeclStatements(NodeTransformer):
                             ]
                 elif isinstance(node.rvalue, CallExpr) and node.rvalue.name.name == "malloc":
                     # call malloc on every field
-                    mallocCall =CallExpr(
+                    mallocCall = CallExpr(
                             type=Pointer(pointee_type=Void()),
                             args=[IntLiteral(value="1")],
                             name=DeclRefExpr(name="malloc", type=Pointer(pointee_type=Void()))
