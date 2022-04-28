@@ -1364,7 +1364,14 @@ class AST2SDFG:
             setattr(tasklet, "code", CodeBlock(text, dace.Language.CPP))
 
     def malloc2sdfg(self, node: BinOp, sdfg: SDFG):
-        varname = node.lvalue.name
+        if isinstance(node.lvalue, DeclRefExpr):
+            varname = node.lvalue.name
+        elif isinstance(node.lvalue, ParenExpr):
+            varname = node.lvalue.expr.name
+        else:
+            print("WARNING: Unknown malloc2sdfg lvalue type:", node.lvalue)
+            varname = node.lvalue.name
+
         #print("VARNAME:", varname)
 
         # sanity check
@@ -1382,6 +1389,11 @@ class AST2SDFG:
                 oldsizes.append(etype.size)
                 totalsize = totalsize * etype.size
                 etype = etype.element_type
+
+            # if is a single value
+            if len(oldsizes) == 0:
+                oldsizes.append(1)
+
             datatype = self.get_dace_type(oldnode.type)
             sizes = []
             if isinstance(rvalue, IntLiteral):

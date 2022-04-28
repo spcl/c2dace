@@ -457,6 +457,14 @@ class FindOutputNodesVisitor(NodeVisitor):
 
     def visit_BinOp(self, node: BinOp):
         if node.op == "=":
+            if isinstance(node.lvalue, ParenExpr):
+                tmp = node.lvalue.expr
+                while isinstance(tmp, ParenExpr):
+                    tmp = tmp.expr
+                if isinstance(tmp, DeclRefExpr):
+                    self.nodes.append(tmp)
+                else:
+                    print("ERROR: after removing ParenExpr, lvalue is not a DeclRefExpr")
             if isinstance(node.lvalue, DeclRefExpr):
                 self.nodes.append(node.lvalue)
             if isinstance(node.lvalue, UnOp):
@@ -774,7 +782,33 @@ class ReplaceStructDeclStatements(NodeTransformer):
                                 self.visit(s) for s in replacement_statements
                             ]
                 elif isinstance(node.rvalue, CallExpr) and node.rvalue.name.name == "malloc":
-                    # do nothing because it is a pointer
+                    # call malloc on every field
+                    mallocCall =CallExpr(
+                            type=Pointer(pointee_type=Void()),
+                            args=[IntLiteral(value="1")],
+                            name=DeclRefExpr(name="malloc", type=Pointer(pointee_type=Void()))
+                        )
+
+                    struct = node.lvalue.type.get_chain_end()
+
+                    if node.op == "=":
+                        replacement_statements = []
+
+                        fields = self.get_struct(struct.name).fields
+                        if fields is not None:
+                            for f in fields:
+                                l_member_ref = MemberRefExpr(
+                                    name=f.name,
+                                    type=node.lvalue.type.inject_type(f.type),
+                                    containerexpr=node.lvalue)
+                                binop = BinOp(op="=",
+                                              type=f.type,
+                                              lvalue=l_member_ref,
+                                              rvalue=copy.deepcopy(mallocCall))
+                                replacement_statements.append(binop)
+                            return [
+                                self.visit(s) for s in replacement_statements
+                            ]
                     return []
 
         return self.generic_visit(node)
@@ -788,6 +822,10 @@ class ReplaceStructDeclStatements(NodeTransformer):
         splits = self.split_struct_type(node.type, node.name)
         if splits is None:
             return self.generic_visit(node)
+
+        # null initialization to pointer
+        if isinstance(node.init, IntLiteral) and node.init.value == ['0']:
+            return [VarDecl(name=n, type=t, init=IntLiteral(value="0")) for (n, t) in splits.values()]
 
         # check if the struct is initialized as malloc
         if not isinstance(node.init, CallExpr):

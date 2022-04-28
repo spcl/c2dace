@@ -1,12 +1,16 @@
 int main(int argc, char** argv) {
 
-	double* i = malloc(sizeof(double));
+	double addition = 5.0;
 
-	setI(i);
+	double* value = malloc(sizeof(double));
+	(*value) = 0;
 
-	return 0;
+	setI(value);
+
+
+	return addition + (*value);
 }
 
-void setI(double* i) {
-	(*i) = 5.0;
+void setI(double* k) {
+	(*k) = 5.0;
 }
