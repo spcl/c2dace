@@ -444,6 +444,16 @@ class CompoundToBinary(NodeTransformer):
 
 
 class UnaryReferenceAndPointerRemover(NodeTransformer):
+    def visit_ParenExpr(self, node: ParenExpr):
+        # check for unpacked structs that we are dereferencing
+        if not isinstance(node.expr, UnOp):
+            return self.generic_visit(node)
+
+        if not isinstance(node.expr.lvalue, list):
+            return self.generic_visit(node)
+        
+        return list(map(lambda x: ParenExpr(expr=self.generic_visit(x), type=x.type), node.expr.lvalue))
+
     def visit_UnOp(self, node: UnOp):
         if node.op == "*" or node.op == "&":
             return self.generic_visit(node.lvalue)
@@ -865,7 +875,6 @@ class ReplaceStructDeclStatements(NodeTransformer):
         return self.generic_visit(node)
 
     def visit_ParmDecl(self, node: ParmDecl):
-
         if node.type.is_struct_like():
             splits = self.split_struct_type(node.type, node.name)
 

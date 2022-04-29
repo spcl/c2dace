@@ -66,7 +66,7 @@ void generate_matrix(int nx, int ny, int nz, HPC_Sparse_Matrix **A, double **x, 
   int size = 1; // Serial case (not using MPI)
   int rank = 0;
 
-  *A = calloc(1, sizeof(HPC_Sparse_Matrix)); // Allocate matrix struct and fill it
+  *A = malloc(sizeof(HPC_Sparse_Matrix)); // Allocate matrix struct and fill it
   (*A)->title = 0;
 
 
@@ -85,19 +85,19 @@ void generate_matrix(int nx, int ny, int nz, HPC_Sparse_Matrix **A, double **x, 
   
 
   // Allocate arrays that are of length local_nrow
-  (*A)->nnz_in_row = calloc(local_nrow, sizeof(int));
-  (*A)->ptr_to_vals_in_row = calloc(local_nrow, sizeof(double*));
-  (*A)->ptr_to_inds_in_row = calloc(local_nrow, sizeof(int*));
-  (*A)->ptr_to_diags       = calloc(local_nrow, sizeof(double*));
+  (*A)->nnz_in_row = malloc(local_nrow * sizeof(int));
+  (*A)->ptr_to_vals_in_row = malloc(local_nrow * sizeof(double*));
+  (*A)->ptr_to_inds_in_row = malloc(local_nrow * sizeof(int*));
+  (*A)->ptr_to_diags       = malloc(local_nrow * sizeof(double*));
 
-  *x = calloc(local_nrow, sizeof(double));
-  *b = calloc(local_nrow, sizeof(double));
-  *xexact = calloc(local_nrow, sizeof(double));
+  *x = malloc(local_nrow * sizeof(double));
+  *b = malloc(local_nrow * sizeof(double));
+  *xexact = malloc(local_nrow * sizeof(double));
 
 
   // Allocate arrays that are of length local_nnz
-  (*A)->list_of_vals = calloc(local_nnz, sizeof(double));
-  (*A)->list_of_inds = calloc(local_nnz, sizeof(int));
+  (*A)->list_of_vals = malloc(local_nnz * sizeof(double));
+  (*A)->list_of_inds = malloc(local_nnz * sizeof(int));
 
   double * curvalptr = (*A)->list_of_vals;
   int * curindptr = (*A)->list_of_inds;
@@ -248,8 +248,10 @@ int HPCCG (HPC_Sparse_Matrix * A, const double * const b, double * const x, cons
 int main(int argc, char *argv[])
 {
 
-  HPC_Sparse_Matrix *A;
-  double *x, *b, *xexact;
+  HPC_Sparse_Matrix **A = malloc(sizeof(HPC_Sparse_Matrix*));
+  double **x = malloc(sizeof(double*));
+  double **b = malloc(sizeof(double*));
+  double **xexact = malloc(sizeof(double*));
   double norm, d;
   int ierr = 0;
   int i, j;
@@ -260,20 +262,20 @@ int main(int argc, char *argv[])
   ny = 42;
   nz = 23;
 
-  generate_matrix(nx, ny, nz, &A, &x, &b, &xexact);
+  generate_matrix(nx, ny, nz, A, x, b, xexact);
 
-  int* niters = calloc(1, sizeof(int));
-  double* normr = calloc(1, sizeof(double));
+  int* niters = malloc(sizeof(int));
+  double* normr = malloc(sizeof(double));
 
   int max_iter = 150;
   double tolerance = 0.0; // Set tolerance to zero to make all runs do max_iter iterations
-  ierr = HPCCG( A, b, x, max_iter, tolerance, niters, normr);
+  ierr = HPCCG( (*A), (*b), (*x), max_iter, tolerance, niters, normr);
 
 	if (ierr) printf("Error in call to CG: %d.\n", ierr);
 
   double fniters = *niters; 
-  double fnrow = A->total_nrow;
-  double fnnz = A->total_nnz;
+  double fnrow = (*A)->total_nrow;
+  double fnnz = (*A)->total_nnz;
   double fnops_ddot = fniters*4*fnrow;
   double fnops_waxpby = fniters*6*fnrow;
   double fnops_sparsemv = fniters*2*fnnz;
