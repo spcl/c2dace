@@ -123,7 +123,6 @@ def c2d_workflow(_dir,
         CXXClassToStruct,
         FlattenStructs,
         ReplaceStructDeclStatements,
-        ReplaceStructInits,
         UnaryReferenceAndPointerRemover,
         CondExtractor,
         UnaryExtractor,
@@ -138,24 +137,15 @@ def c2d_workflow(_dir,
 
     debug = True
 
-    # save struct modified initializers for ReplaceStructInits
-    struct_inits = dict()
-    struct_replacements = dict()
-
     for transformation in transformations:
         if debug:
             print("="*10)
             print(transformation)
-            if transformation == ReplaceStructDeclStatements:
+            if transformation == CondExtractor:
                 with open("tmp/middle.pseudo.cpp", "w") as f:
                     f.write(get_pseudocode(changed_ast))
-
-        if transformation in [ReplaceStructDeclStatements, ReplaceStructInits]:
-            params = [struct_inits, struct_replacements]
-        else:
-            params = []
-
-        changed_ast = transformation(*params).visit(changed_ast)
+            #PrinterVisitor().visit(changed_ast) 
+        changed_ast = transformation().visit(changed_ast)
 
     type_validator = ValidateNodeTypes()
     changed_ast = type_validator.visit(changed_ast)

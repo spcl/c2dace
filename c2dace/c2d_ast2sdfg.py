@@ -1382,50 +1382,49 @@ class AST2SDFG:
 
         rvalue = node.rvalue.args[0]
 
-        if self.incomplete_arrays.get((sdfg, varname)) is None:
-            # need to find the connected nodes and modify the shape
+        if self.incomplete_arrays.get((sdfg, varname)) is not None:
+            oldnode = self.incomplete_arrays.get((sdfg, varname))
+            oldsizes = []
+            totalsize = 1
+            etype = oldnode.type.pointee_type
+            while isinstance(etype, ConstantArray):
+                oldsizes.append(etype.size)
+                totalsize = totalsize * etype.size
+                etype = etype.element_type
+
+            # if is a single value
+            if len(oldsizes) == 0:
+                oldsizes.append(1)
+
+            datatype = self.get_dace_type(oldnode.type)
+            sizes = []
+            if isinstance(rvalue, IntLiteral):
+                sizes.insert(0, rvalue.value[0])
+            elif isinstance(rvalue, BinOp):
+                tw = TaskletWriter([], [])
+                text = tw.write_tasklet_code(rvalue)
+                sizes.insert(0, text)
+            else:
+                raise TypeError("malloc value cannot be parsed")
+            if totalsize == dace.symbolic.pystr_to_symbolic(sizes[0]):
+                #print("MAtch for sizes:", totalsize)
+                sizes = oldsizes
+            else:
+                if (totalsize != 1):
+                    print("Not Match for sizes:", totalsize, sizes[0])
+                    raise ValueError("pointer sizes mismatch")
+            #print(datatype.__class__.__name__)
+            #print(oldnode.name, sizes, datatype)
+            self.name_mapping[sdfg][oldnode.name] = find_new_array_name(
+                self.all_array_names, oldnode.name)
+            sdfg.add_array(self.name_mapping[sdfg][oldnode.name],
+                           shape=sizes,
+                           dtype=datatype,
+                           transient=True)
+            self.all_array_names.append(self.name_mapping[sdfg][oldnode.name])
+
+        else:
             print("WARNING allocating ", varname, " that is not marked as needed (this could be correct)")
-            return
-
-        oldnode = self.incomplete_arrays.get((sdfg, varname))
-        oldsizes = []
-        totalsize = 1
-        etype = oldnode.type.pointee_type
-        while isinstance(etype, ConstantArray):
-            oldsizes.append(etype.size)
-            totalsize = totalsize * etype.size
-            etype = etype.element_type
-
-        # if is a single value
-        if len(oldsizes) == 0:
-            oldsizes.append(1)
-
-        datatype = self.get_dace_type(oldnode.type)
-        sizes = []
-        if isinstance(rvalue, IntLiteral):
-            sizes.insert(0, rvalue.value[0])
-        elif isinstance(rvalue, BinOp):
-            tw = TaskletWriter([], [])
-            text = tw.write_tasklet_code(rvalue)
-            sizes.insert(0, text)
-        else:
-            raise TypeError("malloc value cannot be parsed")
-        if totalsize == dace.symbolic.pystr_to_symbolic(sizes[0]):
-            #print("MAtch for sizes:", totalsize)
-            sizes = oldsizes
-        else:
-            if (totalsize != 1):
-                print("Not Match for sizes:", totalsize, sizes[0])
-                raise ValueError("pointer sizes mismatch")
-        #print(datatype.__class__.__name__)
-        #print(oldnode.name, sizes, datatype)
-        self.name_mapping[sdfg][oldnode.name] = find_new_array_name(
-            self.all_array_names, oldnode.name)
-        sdfg.add_array(self.name_mapping[sdfg][oldnode.name],
-                        shape=sizes,
-                        dtype=datatype,
-                        transient=True)
-        self.all_array_names.append(self.name_mapping[sdfg][oldnode.name])
 
     def binop2sdfg(self, node: BinOp, sdfg: SDFG):
         node.location_line = self.tasklet_count

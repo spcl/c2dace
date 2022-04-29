@@ -1,6 +1,7 @@
 struct example_struct
 {
 	double* data;
+	double size;
 };
 
 typedef struct example_struct example;
@@ -9,7 +10,8 @@ typedef struct example_struct example;
 int main(int argc, char** argv) {
 
 	example *ex = malloc(sizeof(example));
-	ex->data = malloc(sizeof(double) * 3);
+	ex->size = 3;
+	ex->data = malloc(sizeof(double) * (ex->size));
 
 	fillStruct(ex);
 

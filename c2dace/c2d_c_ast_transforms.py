@@ -639,10 +639,8 @@ class FlattenStructs(NodeTransformer):
 
 
 class ReplaceStructDeclStatements(NodeTransformer):
-    def __init__(self, struct_inits, struct_replacements):
+    def __init__(self):
         self.structdefs: Dict[str, StructDecl] = {}
-        self.struct_inits = struct_inits
-        self.struct_replacements = struct_replacements
 
     def struct_is_defined(self, struct_name):
         return struct_name in self.structdefs.keys()
@@ -812,33 +810,6 @@ class ReplaceStructDeclStatements(NodeTransformer):
                                 self.visit(s) for s in replacement_statements
                             ]
                     return []
-            elif isinstance(node.lvalue, MemberRefExpr) and isinstance(node.rvalue, CallExpr):
-                # if we are initializing a pointer to a field member and save the initialization
-                # to apply at the creation of the object
-
-                # WARNING: this assumes that we always initialize the same size field for the same
-                # struct type to do this in a better way we need to do pointer analysis
-
-                # check if we are calling malloc
-                if not isinstance(node.rvalue.name, DeclRefExpr):
-                    return self.generic_visit(node)
-
-                if node.rvalue.name.name != "malloc":
-                    return self.generic_visit(node)
-
-                field_name = node.lvalue.name
-                struct_type = node.lvalue.containerexpr.type.get_chain_end()
-
-                # check that is really a struct
-                if not isinstance(struct_type, Struct):
-                    return self.generic_visit(node)
-
-                # check if we already found another initialization of this field
-                if self.struct_inits.get((struct_type.name, field_name)) is not None:
-                    print("WARNING: multiple initialization of field ", field_name, " in struct ", struct_type.name)
-
-                # save malloc to set-it when initializing field
-                self.struct_inits[(struct_type.name, field_name)] = copy.deepcopy(node.rvalue)
 
         return self.generic_visit(node)
 
@@ -852,38 +823,24 @@ class ReplaceStructDeclStatements(NodeTransformer):
         if splits is None:
             return self.generic_visit(node)
 
-        def replace():
-            # null initialization to pointer
-            if isinstance(node.init, IntLiteral) and node.init.value == ['0']:
-                return [VarDecl(name=n, type=t, init=IntLiteral(value="0")) for (n, t) in splits.values()]
+        # null initialization to pointer
+        if isinstance(node.init, IntLiteral) and node.init.value == ['0']:
+            return [VarDecl(name=n, type=t, init=IntLiteral(value="0")) for (n, t) in splits.values()]
 
-            # check if the struct is initialized as malloc
-            if not isinstance(node.init, CallExpr):
-                return [VarDecl(name=n, type=t) for (n, t) in splits.values()]
+        # check if the struct is initialized as malloc
+        if not isinstance(node.init, CallExpr):
+            return [VarDecl(name=n, type=t) for (n, t) in splits.values()]
 
-            if node.init.name.name != "malloc":
-                return [VarDecl(name=n, type=t) for (n, t) in splits.values()]
+        if node.init.name.name != "malloc":
+            return [VarDecl(name=n, type=t) for (n, t) in splits.values()]
 
-            mallocCall = CallExpr(
-                    type=Pointer(pointee_type=Void()),
-                    args=[IntLiteral(value="1")],
-                    name=DeclRefExpr(name="malloc", type=Pointer(pointee_type=Void()))
-                )
+        mallocCall =CallExpr(
+                type=Pointer(pointee_type=Void()),
+                args=[IntLiteral(value="1")],
+                name=DeclRefExpr(name="malloc", type=Pointer(pointee_type=Void()))
+            )
 
-            return [VarDecl(name=n, type=t, init=mallocCall) for (n, t) in splits.values()]
-
-        replacement_vars = replace()
-        
-        # save substituted vars
-        struct_name = node.type.get_chain_end().name
-        struct_fields = self.get_struct(struct_name).fields
-        for var, field in zip(replacement_vars, struct_fields):
-            if self.struct_replacements.get(var.name) is None:
-                self.struct_replacements[var.name] = []
-
-            self.struct_replacements[var.name] += [(var, struct_name, field.name)]
-
-        return replacement_vars
+        return [VarDecl(name=n, type=t, init=mallocCall) for (n, t) in splits.values()]
 
 
     def visit_DeclStmt(self, node: DeclStmt):
@@ -916,39 +873,6 @@ class ReplaceStructDeclStatements(NodeTransformer):
 
         return self.generic_visit(node)
 
-class ReplaceStructInits(NodeTransformer):
-    def __init__(self, struct_inits, struct_replacements):
-        self.struct_inits = struct_inits
-        self.struct_replacements = struct_replacements
-
-    def visit_DeclStmt(self, node: DeclStmt):
-        replacement_stmts = []
-
-        for var_decl in node.vardecl:
-            replacement_var_decls = self.as_list(self.visit(var_decl))
-            replacement_stmts += [
-                DeclStmt(vardecl=[vd]) for vd in replacement_var_decls
-            ]
-
-        return replacement_stmts
-
-    def visit_VarDecl(self, node: VarDecl):
-        if self.struct_replacements.get(node.name) is None:
-            return self.generic_visit(node)
-
-        for var, struct_name, field_name in self.struct_replacements[node.name]:
-            # check that is the same VarDecl
-            if var != node:
-                continue
-
-            # if we need to replace it
-            if self.struct_inits.get((struct_name, field_name)) is None:
-                continue
-
-            # replace var with malloc call
-            var.init = self.struct_inits[(struct_name, field_name)]
-
-        return node
 
 class CXXClassToStruct(NodeTransformer):
     def __init__(self):
