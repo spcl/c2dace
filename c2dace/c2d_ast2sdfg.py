@@ -1174,6 +1174,9 @@ class AST2SDFG:
                     elif isinstance(init, BinOp):
                         entry[iter_name] = ConditionWriter(
                             sdfg, self.name_mapping).write_tasklet_code(init)
+                    elif isinstance(init, UnOp):
+                        entry[iter_name] = ConditionWriter(
+                            sdfg, self.name_mapping).write_tasklet_code(init)
                     else:
                         raise TypeError("Unexpected for declaration type")
                 #sdfg.add_edge(begin_state, guard_substate, dace.InterstateEdge(assignments=entry))
