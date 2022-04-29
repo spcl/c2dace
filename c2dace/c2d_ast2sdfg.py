@@ -279,6 +279,7 @@ class TaskletWriter:
             Float: "float",
             Int: "int",
             Char: "char",
+            LongLong: "long long"
         }
         self.ast_elements = {
             BinOp: self.binop2string,
