@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stddef.h>
 #include <math.h>
 #include <stdlib.h>
 
@@ -25,7 +26,7 @@ struct HPC_Sparse_Matrix_STRUCT {
 
 typedef struct HPC_Sparse_Matrix_STRUCT HPC_Sparse_Matrix;
 
-int ddot (const int n, const double * const x, const double * const y, 
+void ddot (const int n, const double * const x, const double * const y, 
 	  double * const result)
 {  
   double local_result = 0.0;
@@ -35,12 +36,10 @@ int ddot (const int n, const double * const x, const double * const y,
     for (int i=0; i<n; i++) local_result += x[i]*y[i];
 
   *result = local_result;
-
-  return(0);
 }
 
 
-int waxpby (const int n, const double alpha, const double * const x, 
+void waxpby (const int n, const double alpha, const double * const x, 
 	    const double beta, const double * const y, 
 		     double * const w)
 {  
@@ -53,8 +52,6 @@ int waxpby (const int n, const double alpha, const double * const x,
   else {
     for (int i=0; i<n; i++) w[i] = alpha * x[i] + beta * y[i];
   }
-
-  return(0);
 }
 
 
@@ -160,7 +157,7 @@ void generate_matrix(int nx, int ny, int nz, HPC_Sparse_Matrix **A, double **x, 
 }
 
 
-int HPC_sparsemv( HPC_Sparse_Matrix *A, 
+void HPC_sparsemv( HPC_Sparse_Matrix *A, 
 		 const double * const x, double * const y)
 {
 
@@ -181,11 +178,10 @@ int HPC_sparsemv( HPC_Sparse_Matrix *A,
           sum += cur_vals[j]*x[cur_inds[j]];
       y[i] = sum;
     }
-  return(0);
 }
 
 
-int HPCCG (HPC_Sparse_Matrix * A, const double * const b, double * const x, const int max_iter, const double tolerance, int* niters, double* normr)
+void HPCCG (HPC_Sparse_Matrix * A, const double * const b, double * const x, const int max_iter, const double tolerance, int* niters, double* normr)
 
 {
   int nrow = A->local_nrow;
@@ -214,7 +210,7 @@ int HPCCG (HPC_Sparse_Matrix * A, const double * const b, double * const x, cons
 
   if (rank==0) printf("Initial Residual = %e\n", norm);
 
-  for(int k=1; k<max_iter && norm > tolerance; k++ )
+  for(int k=1; (k<max_iter) && (norm > tolerance); k++ )
     {
       if (k == 1)
 	{
@@ -242,7 +238,6 @@ int HPCCG (HPC_Sparse_Matrix * A, const double * const b, double * const x, cons
     }
 
   *normr = norm;
-  return(0);
 }
 
 int main(int argc, char *argv[])
@@ -269,9 +264,7 @@ int main(int argc, char *argv[])
 
   int max_iter = 150;
   double tolerance = 0.0; // Set tolerance to zero to make all runs do max_iter iterations
-  ierr = HPCCG( (*A), (*b), (*x), max_iter, tolerance, niters, normr);
-
-	if (ierr) printf("Error in call to CG: %d.\n", ierr);
+  HPCCG( (*A), (*b), (*x), max_iter, tolerance, niters, normr);
 
   double fniters = *niters; 
   double fnrow = (*A)->total_nrow;

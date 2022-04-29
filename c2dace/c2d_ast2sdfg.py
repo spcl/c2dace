@@ -328,8 +328,11 @@ class TaskletWriter:
         #print("RL: ",self.write_tasklet_code(node.rvalue))
         # print(node.op)
         op = node.op
-        # if op == "&&":
-        #    op=" and "
+        if op == "&&":
+            op=" and "
+
+        if op == "||":
+            op=" or "
         # if self.write_tasklet_code(node.lvalue) is None:
         #    a=1
         # if self.write_tasklet_code(node.rvalue) is None:
@@ -899,6 +902,7 @@ class AST2SDFG:
                     self.name_mapping[self.globalsdfg][i.name])
                 mapped_name = self.name_mapping[self.globalsdfg][i.name]
             else:
+                print(i)
                 raise NameError("Variable name not found: " + i.name)
 
             if not hasattr(var, "shape") or len(var.shape) == 0:
