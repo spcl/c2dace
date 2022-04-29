@@ -270,9 +270,10 @@ def match_names(sdfgname: str, cname: str):
 
 
 class TaskletWriter:
-    def __init__(self, outputs: List[str], outputs_changes: List[str]):
+    def __init__(self, outputs: List[str], outputs_changes: List[str], name_mapping=None):
         self.outputs = outputs
         self.outputs_changes = outputs_changes
+        self.name_mapping = name_mapping
         self.ast2ctypes = {
             Double: "double",
             Float: "float",
@@ -337,6 +338,10 @@ class TaskletWriter:
 
     def declref2string(self, node: DeclRefExpr):
         return_value = node.name
+
+        if self.name_mapping is not None:
+            if self.name_mapping.get(node.name) is not None:
+                return_value = self.name_mapping[node.name]
 
         if len(self.outputs) > 0:
             #print("TASK WRITER:",node.name,self.outputs[0],self.outputs_changes[0])
@@ -700,10 +705,7 @@ class AST2SDFG:
             while isinstance(tmp, ParenExpr):
                 tmp = tmp.expr
 
-            if isinstance(tmp, DeclRefExpr):
-                write_vars.append(tmp)
-            else:
-                print("WARNING: skipping unsupported lvalue ", tmp)
+            write_vars.append(tmp)
 
         read_vars = copy.deepcopy(used_vars)
         for i in write_vars:
@@ -1401,7 +1403,7 @@ class AST2SDFG:
             if isinstance(rvalue, IntLiteral):
                 sizes.insert(0, rvalue.value[0])
             elif isinstance(rvalue, BinOp):
-                tw = TaskletWriter([], [])
+                tw = TaskletWriter([], [], self.name_mapping[sdfg])
                 text = tw.write_tasklet_code(rvalue)
                 sizes.insert(0, text)
             else:
