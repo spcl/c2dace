@@ -63,8 +63,8 @@ void generate_matrix(int nx, int ny, int nz, HPC_Sparse_Matrix **A, double **x, 
   int size = 1; // Serial case (not using MPI)
   int rank = 0;
 
-  *A = malloc(sizeof(HPC_Sparse_Matrix)); // Allocate matrix struct and fill it
-  (*A)->title = 0;
+  HPC_Sparse_Matrix* A_tmp = malloc(sizeof(HPC_Sparse_Matrix)); // Allocate matrix struct and fill it
+  (A_tmp)->title = 0;
 
 
   // Set this bool to true if you want a 7-pt stencil instead of a 27 pt stencil
@@ -82,22 +82,22 @@ void generate_matrix(int nx, int ny, int nz, HPC_Sparse_Matrix **A, double **x, 
   
 
   // Allocate arrays that are of length local_nrow
-  (*A)->nnz_in_row = malloc(local_nrow * sizeof(int));
-  (*A)->ptr_to_vals_in_row = malloc(local_nrow * sizeof(double*));
-  (*A)->ptr_to_inds_in_row = malloc(local_nrow * sizeof(int*));
-  (*A)->ptr_to_diags       = malloc(local_nrow * sizeof(double*));
+  (A_tmp)->nnz_in_row = malloc(local_nrow * sizeof(int));
+  (A_tmp)->ptr_to_vals_in_row = malloc(local_nrow * sizeof(double*));
+  (A_tmp)->ptr_to_inds_in_row = malloc(local_nrow * sizeof(int*));
+  (A_tmp)->ptr_to_diags       = malloc(local_nrow * sizeof(double*));
 
-  *x = malloc(local_nrow * sizeof(double));
-  *b = malloc(local_nrow * sizeof(double));
-  *xexact = malloc(local_nrow * sizeof(double));
+  double* x_tmp = malloc(local_nrow * sizeof(double));
+  double* b_tmp = malloc(local_nrow * sizeof(double));
+  double* xexact_tmp = malloc(local_nrow * sizeof(double));
 
 
   // Allocate arrays that are of length local_nnz
-  (*A)->list_of_vals = malloc(local_nnz * sizeof(double));
-  (*A)->list_of_inds = malloc(local_nnz * sizeof(int));
+  (A_tmp)->list_of_vals = malloc(local_nnz * sizeof(double));
+  (A_tmp)->list_of_inds = malloc(local_nnz * sizeof(int));
 
-  double * curvalptr = (*A)->list_of_vals;
-  int * curindptr = (*A)->list_of_inds;
+  double * curvalptr = (A_tmp)->list_of_vals;
+  int * curindptr = (A_tmp)->list_of_inds;
 
   long long nnzglobal = 0;
   for (int iz=0; iz<nz; iz++) {
@@ -106,8 +106,8 @@ void generate_matrix(int nx, int ny, int nz, HPC_Sparse_Matrix **A, double **x, 
 	int curlocalrow = iz*nx*ny+iy*nx+ix;
 	int currow = start_row+iz*nx*ny+iy*nx+ix;
 	int nnzrow = 0;
-	(*A)->ptr_to_vals_in_row[curlocalrow] = curvalptr;
-	(*A)->ptr_to_inds_in_row[curlocalrow] = curindptr;
+	(A_tmp)->ptr_to_vals_in_row[curlocalrow] = curvalptr;
+	(A_tmp)->ptr_to_inds_in_row[curlocalrow] = curindptr;
 	for (int sz=-1; sz<=1; sz++) {
 	  for (int sy=-1; sy<=1; sy++) {
 	    for (int sx=-1; sx<=1; sx++) {
@@ -118,7 +118,7 @@ void generate_matrix(int nx, int ny, int nz, HPC_Sparse_Matrix **A, double **x, 
               if ((ix+sx>=0) && (ix+sx<nx) && (iy+sy>=0) && (iy+sy<ny) && (curcol>=0 && curcol<total_nrow)) {
                 if (!use_7pt_stencil || (sz*sz+sy*sy+sx*sx<=1)) { // This logic will skip over point that are not part of a 7-pt stencil
                   if (curcol==currow) {
-		    (*A)->ptr_to_diags[curlocalrow] = curvalptr;
+		    (A_tmp)->ptr_to_diags[curlocalrow] = curvalptr;
 		    *curvalptr++ = 27.0;
 		  }
 		  else {
@@ -131,11 +131,11 @@ void generate_matrix(int nx, int ny, int nz, HPC_Sparse_Matrix **A, double **x, 
 	    } // end sx loop
           } // end sy loop
         } // end sz loop
-	(*A)->nnz_in_row[curlocalrow] = nnzrow;
+	(A_tmp)->nnz_in_row[curlocalrow] = nnzrow;
 	nnzglobal += nnzrow;
-	(*x)[curlocalrow] = 0.0;
-	(*b)[curlocalrow] = 27.0 - ((double) (nnzrow-1));
-	(*xexact)[curlocalrow] = 1.0;
+	(x_tmp)[curlocalrow] = 0.0;
+	(b_tmp)[curlocalrow] = 27.0 - ((double) (nnzrow-1));
+	(xexact_tmp)[curlocalrow] = 1.0;
       } // end ix loop
      } // end iy loop
   } // end iz loop  
@@ -145,13 +145,18 @@ void generate_matrix(int nx, int ny, int nz, HPC_Sparse_Matrix **A, double **x, 
 
   if (debug) printf("Process %d of %d has %lld nonzeros.\n",rank,size,nnzglobal);
 
-  (*A)->start_row = start_row ; 
-  (*A)->stop_row = stop_row;
-  (*A)->total_nrow = total_nrow;
-  (*A)->total_nnz = total_nnz;
-  (*A)->local_nrow = local_nrow;
-  (*A)->local_ncol = local_nrow;
-  (*A)->local_nnz = local_nnz;
+  (A_tmp)->start_row = start_row ; 
+  (A_tmp)->stop_row = stop_row;
+  (A_tmp)->total_nrow = total_nrow;
+  (A_tmp)->total_nnz = total_nnz;
+  (A_tmp)->local_nrow = local_nrow;
+  (A_tmp)->local_ncol = local_nrow;
+  (A_tmp)->local_nnz = local_nnz;
+
+  (*A) = A_tmp;
+  (*x) = x_tmp;
+  (*b) = b_tmp;
+  (*xexact) = xexact_tmp;
 
   return;
 }

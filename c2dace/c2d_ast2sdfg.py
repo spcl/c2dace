@@ -772,7 +772,7 @@ class AST2SDFG:
                       rvalue=DeclRefExpr(name=symbol.name),
                       op="="))
 
-        for variable_in_call in variables_in_call:
+        for variable_in_call, i in zip(variables_in_call, range(len(variables_in_call))):
             all_arrays = self.get_arrays_in_context(sdfg)
 
             sdfg_name = self.name_mapping.get(sdfg).get(variable_in_call.name)
@@ -782,8 +782,7 @@ class AST2SDFG:
             for array_name, array in all_arrays.items():
                 if array_name in [sdfg_name]:
                     matched = True
-                    local_name = parameters[variables_in_call.index(
-                        variable_in_call)]
+                    local_name = parameters[i]
                     self.name_mapping[new_sdfg][
                         local_name.name] = find_new_array_name(
                             self.all_array_names, local_name.name)
@@ -822,8 +821,7 @@ class AST2SDFG:
             if not matched:
                 for array_name, array in all_arrays.items():
                     if array_name in [globalsdfg_name]:
-                        local_name = parameters[variables_in_call.index(
-                            variable_in_call)]
+                        local_name = parameters[i]
                         self.name_mapping[new_sdfg][
                             local_name.name] = find_new_array_name(
                                 self.all_array_names, local_name.name)
@@ -887,9 +885,9 @@ class AST2SDFG:
                             internal_sdfg, self.name_mapping[new_sdfg][i],
                             memlet)
 
-        for i in variables_in_call:
+        for i, c in zip(variables_in_call, range(len(variables_in_call))):
 
-            local_name = parameters[variables_in_call.index(i)]
+            local_name = parameters[c]
             if self.name_mapping.get(sdfg).get(i.name) is not None:
                 var = sdfg.arrays.get(self.name_mapping[sdfg][i.name])
                 mapped_name = self.name_mapping[sdfg][i.name]
