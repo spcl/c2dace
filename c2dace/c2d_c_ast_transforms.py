@@ -185,13 +185,35 @@ class InitExtractor(NodeTransformer):
             res = lister.nodes
             temp = self.count
             newbody.append(self.visit(child))
-            if res is not None:
-                for i in range(0, len(res)):
-                    #print(res[i].name)
+            if res is None:
+                continue
+
+            for i in res:
+                def default():
                     newbody.append(
                         BinOp(op="=",
-                              lvalue=DeclRefExpr(name=res[i].name),
-                              rvalue=res[i].init))
+                                lvalue=DeclRefExpr(name=i.name),
+                                rvalue=i.init))
+                
+                # check if the init is malloc
+                if not isinstance(i.init, CallExpr):
+                    default()
+                    continue
+
+                if not isinstance(i.init.name, DeclRefExpr):
+                    default()
+                    continue
+
+                if i.init.name.name != "malloc":
+                    default()
+                    continue
+
+                default()
+                # add also an init with a concrete value s.t. the transient is always initialized
+                newbody.append(
+                    BinOp(op="=",
+                            lvalue=DeclRefExpr(name=i.name),
+                            rvalue=IntLiteral(value="0")))
 
         return BasicBlock(body=newbody)
 
