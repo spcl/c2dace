@@ -90,9 +90,5 @@ if __name__ == "__main__":
 
     _dir = os.path.dirname(args.f)
 
-    c2d_workflow(_dir,
-                    filecore,
-                    fileextension,
-                    autoopt=False,
-                    verbose=True,
-                    print_ast=True)
+    c2d_workflow(_dir, filecore, fileextension, autoopt=False, verbose=True, print_ast=True)
+    #shortcut(filecore)
