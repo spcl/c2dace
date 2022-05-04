@@ -62,7 +62,7 @@ def raise_exception(error_message):
 
 def make_nested_sdfg_with_no_context_change(top_sdfg: Cursor, new_sdfg: Cursor,
                                             name: str, used_variables, node,
-                                            state):
+                                            state, fun_write=[]):
     local_variables_new_sdfg_names = []
     local_variables_names = []
     substate = top_sdfg.add_state("state" + name)
@@ -71,7 +71,7 @@ def make_nested_sdfg_with_no_context_change(top_sdfg: Cursor, new_sdfg: Cursor,
     ]
     binop_nodes = [node for node in walk(node.body) if isinstance(node, BinOp)]
     write_nodes = [node for node in binop_nodes if node.op == "="]
-    write_vars = [node.lvalue for node in write_nodes]
+    write_vars = [node.lvalue for node in write_nodes] + fun_write
     read_vars = copy.deepcopy(used_vars)
     for i in write_vars:
         if i in read_vars:
@@ -247,6 +247,18 @@ def finish_add_state_to_sdfg(state: SDFGState, top_sdfg: SDFG,
 
 
 def remove_duplicates(vars: List[DeclRefExpr]):
+    i = 0
+    while i < len(vars):
+        if isinstance(vars[i], ParenExpr):
+            vars[i] = vars[i].expr
+        elif isinstance(vars[i], DeclRefExpr):
+            i += 1
+        elif isinstance(vars[i], ArraySubscriptExpr):
+            i += 1
+        else:
+            print("WARNING (remove_duplicates) - UNKNOWN EXPRESSION TYPE:", vars[i])
+            i += 1
+
     new_set = []
     for i in vars:
         not_found = True
@@ -539,6 +551,7 @@ class AST2SDFG:
         self.last_sdfg_states = {}
         self.functions_call_stack = []
         self.functions_data = {}
+        self.current_function = None
         self.loop_depth = -1
         self.ast = Node()
         self.globalsdfg = globalsdfg
@@ -885,7 +898,10 @@ class AST2SDFG:
         self.functions_data[node.name] = read_names, write_names, node
 
         # recurse
+        prev_function = self.current_function
+        self.current_function = node.name
         self.translate(node.body, new_sdfg)
+        self.current_function = prev_function
 
         # get back data
         old_func = self.functions_call_stack.pop()
@@ -901,7 +917,7 @@ class AST2SDFG:
 
         # for every called function check if the function writes to a pointer
         while (old_func != node.name):
-            print("checking for pointers in: ", old_func)
+            print("FUN funcheck: ", old_func)
             fun_rd, fun_wr, fun_node = self.functions_data[old_func]
             args = list(map(lambda x: x.name, fun_node.args))
             calls = fun_calls[fun_node.name]
@@ -921,7 +937,7 @@ class AST2SDFG:
                     if arg_mapped is None:
                         arg_mapped = arg.name
 
-                    print("found pointer: ", i, ", ", arg.name, ", ", arg_mapped)
+                    #print("found pointer: ", i, ", ", arg.name, ", ", arg_mapped)
                     if arg.name not in write_names:
                         print("propagating write ", arg.name, "/", arg_mapped)
                         write_names.append(arg.name)
@@ -1287,8 +1303,45 @@ class AST2SDFG:
 
         #sdfg.add_edge(self.last_sdfg_states[sdfg], end_loop_state,
         #             dace.InterstateEdge())
+
+        # get all function calls in this body
+        fun_calls = {}
+        for n in walk(node.body):
+            if not isinstance(n, CallExpr):
+                continue
+            call_list = fun_calls.get(n.name.name, [])
+            call_list.append(n)
+            fun_calls[n.name.name] = call_list
+
+        fun_list = self.functions_call_stack[::-1]
+        fun_list = fun_list[:fun_list.index(self.current_function)]
+
+        fun_write_vars = []
+        # for every called function check if the function writes to a pointer
+        for f in fun_list:
+            print("FORLOOP funcheck: ", f)
+            fun_rd, fun_wr, fun_node = self.functions_data[f]
+            args = list(map(lambda x: x.name, fun_node.args))
+            calls = fun_calls[fun_node.name]
+            for i in fun_wr:
+                if i not in args:
+                    continue
+                index = args.index(i)
+                
+                for c in calls:
+                    arg = c.args[index]
+
+                    if not hasattr(arg, "name"):
+                        print("WARNING unexpected type ", arg, " in pointer propagation")
+                        continue
+
+                    #print("found pointer: ", i, ", ", arg.name, ", ", arg_mapped)
+                    print("propagating write ", arg.name)
+                    fun_write_vars.append(arg)
+
+
         loop_state = make_nested_sdfg_with_no_context_change(
-            sdfg, new_sdfg, name, used_vars, node, self)
+            sdfg, new_sdfg, name, used_vars, node, self, fun_write_vars)
         self.translate(node.body, new_sdfg)
 
         self.last_sdfg_states[sdfg] = final_substate
@@ -1450,6 +1503,7 @@ class AST2SDFG:
 
         if self.incomplete_arrays.get((sdfg, varname)) is not None:
             oldnode = self.incomplete_arrays.get((sdfg, varname))
+            del self.incomplete_arrays[(sdfg, varname)]
             oldsizes = []
             totalsize = 1
             etype = oldnode.type.pointee_type
