@@ -189,26 +189,21 @@ class InitExtractor(NodeTransformer):
                 continue
 
             for i in res:
-                def default():
-                    newbody.append(
-                        BinOp(op="=",
-                                lvalue=DeclRefExpr(name=i.name),
-                                rvalue=i.init))
+                newbody.append(
+                    BinOp(op="=",
+                            lvalue=DeclRefExpr(name=i.name),
+                            rvalue=i.init))
                 
                 # check if the init is malloc
                 if not isinstance(i.init, CallExpr):
-                    default()
                     continue
 
                 if not isinstance(i.init.name, DeclRefExpr):
-                    default()
                     continue
 
                 if i.init.name.name != "malloc":
-                    default()
                     continue
 
-                default()
                 # add also an init with a concrete value s.t. the transient is always initialized
                 newbody.append(
                     BinOp(op="=",

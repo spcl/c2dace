@@ -537,6 +537,8 @@ class AST2SDFG:
             name_mapping=None):
         self.start_function = start_function
         self.last_sdfg_states = {}
+        self.functions_call_stack = []
+        self.functions_data = {}
         self.loop_depth = -1
         self.ast = Node()
         self.globalsdfg = globalsdfg
@@ -693,9 +695,12 @@ class AST2SDFG:
 
     def funcdecl2sdfg(self, node: FuncDecl, sdfg: SDFG):
         print("FUNC: ", node.name)
+        self.functions_call_stack.append(node.name)
+
         if node.body is None:
             print("Empty function")
             return
+
         used_vars = [
             node for node in walk(node.body) if isinstance(node, DeclRefExpr)
         ]
@@ -870,6 +875,63 @@ class AST2SDFG:
                                 dace.int32,
                                 transient=False)
 
+        start_state = new_sdfg.add_state("Start_State_Function" + node.name,
+                                         is_start_state=True)
+        self.last_sdfg_states[new_sdfg] = start_state
+        final_state = new_sdfg.add_state("Final_State_Function" + node.name)
+        self.last_function_state[new_sdfg] = final_state
+
+        # save data for recursive call
+        self.functions_data[node.name] = read_names, write_names, node
+
+        # recurse
+        self.translate(node.body, new_sdfg)
+
+        # get back data
+        old_func = self.functions_call_stack.pop()
+
+        # get all function calls in this body
+        fun_calls = {}
+        for n in walk(node.body):
+            if not isinstance(n, CallExpr):
+                continue
+            call_list = fun_calls.get(n.name.name, [])
+            call_list.append(n)
+            fun_calls[n.name.name] = call_list
+
+        # for every called function check if the function writes to a pointer
+        while (old_func != node.name):
+            print("checking for pointers in: ", old_func)
+            fun_rd, fun_wr, fun_node = self.functions_data[old_func]
+            args = list(map(lambda x: x.name, fun_node.args))
+            calls = fun_calls[fun_node.name]
+            for i in fun_wr:
+                if i not in args:
+                    continue
+                index = args.index(i)
+                
+                for c in calls:
+                    arg = c.args[index]
+
+                    if not hasattr(arg, "name"):
+                        print("WARNING unexpected type ", arg, " in pointer propagation")
+                        continue
+
+                    arg_mapped = self.name_mapping.get(new_sdfg).get(arg.name)
+                    if arg_mapped is None:
+                        arg_mapped = arg.name
+
+                    print("found pointer: ", i, ", ", arg.name, ", ", arg_mapped)
+                    if arg.name not in write_names:
+                        print("propagating write ", arg.name, "/", arg_mapped)
+                        write_names.append(arg.name)
+                        outs_in_new_sdfg.append(arg_mapped)
+                        inouts_in_new_sdfg.append(arg_mapped)
+
+            old_func = self.functions_call_stack.pop()
+
+        self.functions_call_stack.append(node.name)
+
         internal_sdfg = substate.add_nested_sdfg(new_sdfg,
                                                  sdfg,
                                                  ins_in_new_sdfg,
@@ -917,20 +979,16 @@ class AST2SDFG:
                 add_memlet_read(substate, mapped_name, internal_sdfg,
                                 self.name_mapping[new_sdfg][local_name.name],
                                 memlet)
-        start_state = new_sdfg.add_state("Start_State_Function" + node.name,
-                                         is_start_state=True)
-        self.last_sdfg_states[new_sdfg] = start_state
         for i in assigns:
             self.translate(i, new_sdfg)
-        final_state = new_sdfg.add_state("Final_State_Function" + node.name)
-        self.last_function_state[new_sdfg] = final_state
 
         if node.body is not None:
-            self.translate(node.body, new_sdfg)
             if (self.last_sdfg_states[new_sdfg],
                     final_state) not in new_sdfg._edges:
                 new_sdfg.add_edge(self.last_sdfg_states[new_sdfg], final_state,
                                   dace.InterstateEdge())
+
+        print("ENDF: ", node.name)
 
     def basicblock2sdfg(self, node: BasicBlock, sdfg: SDFG):
         #print("BASIC BLOCK")
