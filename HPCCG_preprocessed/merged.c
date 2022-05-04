@@ -26,8 +26,7 @@ struct HPC_Sparse_Matrix_STRUCT {
 
 typedef struct HPC_Sparse_Matrix_STRUCT HPC_Sparse_Matrix;
 
-void ddot (const int n, const double * const x, const double * const y, 
-	  double * const result)
+void ddot (int n, double* x, double* y, double* result)
 {  
   double local_result = 0.0;
   if (y==x)
@@ -39,9 +38,7 @@ void ddot (const int n, const double * const x, const double * const y,
 }
 
 
-void waxpby (const int n, const double alpha, const double * const x, 
-	    const double beta, const double * const y, 
-		     double * const w)
+void waxpby (int n, double alpha, double* x, double beta, double* y, double* w)
 {  
   if (alpha==1.0) {
     for (int i=0; i<n; i++) w[i] = x[i] + beta * y[i];
@@ -55,31 +52,29 @@ void waxpby (const int n, const double alpha, const double * const x,
 }
 
 
-void HPC_sparsemv( HPC_Sparse_Matrix *A, 
-		 const double * const x, double * const y)
+void HPC_sparsemv( HPC_Sparse_Matrix *A, double* x, double* y)
 {
 
-  const int nrow = (const int) A->local_nrow;
+  int nrow = A->local_nrow;
 
   for (int i=0; i< nrow; i++)
     {
       double sum = 0.0;
-      const double * const cur_vals = 
-     (const double * const) A->ptr_to_vals_in_row[i];
+      double* cur_vals = A->ptr_to_vals_in_row[i];
 
-      const int    * const cur_inds = 
-     (const int    * const) A->ptr_to_inds_in_row[i];
+      int cur_nnz = A->nnz_in_row[i];
 
-      const int cur_nnz = (const int) A->nnz_in_row[i];
+      for (int j=0; j< cur_nnz; j++) {
+        int cur_ind = A->ptr_to_inds_in_row[i][j]; 
+        sum += cur_vals[j]*x[cur_ind];
+      }
 
-      for (int j=0; j< cur_nnz; j++)
-          sum += cur_vals[j]*x[cur_inds[j]];
       y[i] = sum;
     }
 }
 
 
-void HPCCG (HPC_Sparse_Matrix * A, const double * const b, double * const x, const int max_iter, const double tolerance, int* niters, double* normr)
+void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double tolerance, int* niters, double* normr)
 
 {
   int nrow = A->local_nrow;
@@ -186,8 +181,8 @@ int main(int argc, char *argv[])
   (A)->list_of_vals = malloc(local_nnz * sizeof(double));
   (A)->list_of_inds = malloc(local_nnz * sizeof(int));
 
-  double * curvalptr = (A)->list_of_vals;
-  int * curindptr = (A)->list_of_inds;
+  double* curvalptr = (A)->list_of_vals;
+  int* curindptr = (A)->list_of_inds;
 
   long long nnzglobal = 0;
   for (int iz=0; iz<nz; iz++) {
@@ -205,16 +200,16 @@ int main(int argc, char *argv[])
 //            Since we have a stack of nx by ny by nz domains , stacking in the z direction, we check to see
 //            if sx and sy are reaching outside of the domain, while the check for the curcol being valid
 //            is sufficient to check the z values
-              if ((ix+sx>=0) && (ix+sx<nx) && (iy+sy>=0) && (iy+sy<ny) && (curcol>=0 && curcol<total_nrow)) {
+              if (((((ix+sx>=0) && (ix+sx<nx)) && (iy+sy>=0)) && (iy+sy<ny)) && (curcol>=0 && curcol<total_nrow)) {
                 if (!use_7pt_stencil || (sz*sz+sy*sy+sx*sx<=1)) { // This logic will skip over point that are not part of a 7-pt stencil
                   if (curcol==currow) {
 		    (A)->ptr_to_diags[curlocalrow] = curvalptr;
-		    *curvalptr++ = 27.0;
+		    (*(curvalptr++)) = 27.0;
 		  }
 		  else {
-		    *curvalptr++ = -1.0;
+		    (*(curvalptr++)) = -1.0;
                   }
-		  *curindptr++ = curcol;
+		  (*(curindptr++)) = curcol;
 		  nnzrow++;
 	        } 
               }

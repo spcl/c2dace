@@ -1574,8 +1574,41 @@ class AST2SDFG:
         output_names_tasklet = []
 
         for i in output_vars:
-            mapped_name = self.get_name_mapping_in_context(sdfg).get(i.name)
             arrays = self.get_arrays_in_context(sdfg)
+
+            if self.incomplete_arrays.get((sdfg, i.name)) is not None:
+                rval = node.rvalue
+                while isinstance(rval, ParenExpr):
+                    rval = rval.expr
+
+                if not isinstance(rval, DeclRefExpr):
+                    print("WARNING: incomplete array", i.name, "is not a DeclRefExpr")
+                    continue
+                
+                rval_mapped = self.get_name_mapping_in_context(sdfg).get(rval.name)
+                if rval_mapped not in arrays:
+                    continue
+                
+                rval_arr = arrays.get(rval_mapped)
+                datatype = rval_arr.dtype
+
+                if isinstance(rval_arr, dace.data.Array):
+                    sizes = rval_arr.shape
+                else:
+                    print("WARNING: rval array of ", i.name, " is not an Array, hence we default to size 1")
+                    sizes = ['1']
+
+                del self.incomplete_arrays[(sdfg, i.name)]
+                self.name_mapping[sdfg][i.name] = find_new_array_name(
+                    self.all_array_names, i.name)
+                sdfg.add_array(self.name_mapping[sdfg][i.name],
+                            shape=sizes,
+                            dtype=datatype,
+                            transient=True)
+                self.all_array_names.append(self.name_mapping[sdfg][i.name])
+                arrays = self.get_arrays_in_context(sdfg)
+
+            mapped_name = self.get_name_mapping_in_context(sdfg).get(i.name)
 
             if mapped_name in arrays and mapped_name not in output_names:
                 output_names.append(mapped_name)
