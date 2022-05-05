@@ -62,7 +62,7 @@ void HPC_sparsemv( HPC_Sparse_Matrix *A, double* x, double* y)
       double sum = 0.0;
       double* cur_vals = A->ptr_to_vals_in_row[i];
 
-      int cur_nnz = A->nnz_in_row[i];
+      int cur_nnz = (A->nnz_in_row)[i];
 
       for (int j=0; j< cur_nnz; j++) {
         int cur_ind = A->ptr_to_inds_in_row[i][j]; 
@@ -216,7 +216,7 @@ int main(int argc, char *argv[])
 	    } // end sx loop
           } // end sy loop
         } // end sz loop
-	(A)->nnz_in_row[curlocalrow] = nnzrow;
+	(A->nnz_in_row)[curlocalrow] = nnzrow;
 	nnzglobal += nnzrow;
 	(x)[curlocalrow] = 0.0;
 	(b)[curlocalrow] = 27.0 - ((double) (nnzrow-1));

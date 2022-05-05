@@ -60,6 +60,20 @@ def raise_exception(error_message):
     raise UserWarning(error_message)
 
 
+def get_var_name(node):
+    tmp = node
+    if isinstance(tmp, ArraySubscriptExpr):
+        tmp = tmp.unprocessed_name
+
+    while isinstance(tmp, ParenExpr):
+        tmp = tmp.expr
+
+    if isinstance(tmp, DeclRefExpr):
+        return tmp.name
+    else:
+        print("WARNING cannot find name of ", node)
+
+
 def make_nested_sdfg_with_no_context_change(top_sdfg: Cursor, new_sdfg: Cursor,
                                             name: str, used_variables, node,
                                             state, fun_write=[]):
@@ -85,11 +99,12 @@ def make_nested_sdfg_with_no_context_change(top_sdfg: Cursor, new_sdfg: Cursor,
     read_names = []
 
     for i in write_vars:
-        if state.name_mapping.get(top_sdfg).get(i.name) in top_sdfg.arrays:
-            write_names.append(i.name)
+        if state.name_mapping.get(top_sdfg).get(get_var_name(i)) in top_sdfg.arrays:
+            write_names.append(get_var_name(i))
     for i in read_vars:
-        if state.name_mapping.get(top_sdfg).get(i.name) in top_sdfg.arrays:
-            read_names.append(i.name)
+        if state.name_mapping.get(top_sdfg).get(get_var_name(i)) in top_sdfg.arrays:
+            read_names.append(get_var_name(i))
+
     for i in top_sdfg.arrays:
         found = False
         for j in used_variables:
@@ -738,10 +753,12 @@ class AST2SDFG:
         used_vars = remove_duplicates(used_vars)
         write_names = []
         read_names = []
+
         for i in write_vars:
-            write_names.append(i.name)
+            write_names.append(get_var_name(i))
         for i in read_vars:
-            read_names.append(i.name)
+            read_names.append(get_var_name(i))
+
         parameters = node.args.copy()
         new_sdfg = dace.SDFG(node.name)
         substate = add_simple_state_to_sdfg(self, sdfg, "state" + node.name)
@@ -1319,6 +1336,8 @@ class AST2SDFG:
         fun_write_vars = []
         # for every called function check if the function writes to a pointer
         for f in fun_list:
+            if f not in fun_calls:
+                continue
             print("FORLOOP funcheck: ", f)
             fun_rd, fun_wr, fun_node = self.functions_data[f]
             args = list(map(lambda x: x.name, fun_node.args))
@@ -1692,7 +1711,6 @@ class AST2SDFG:
             self.translate(i, sdfg)
 
     def vardecl2sdfg(self, node: VarDecl, sdfg: SDFG):
-        print(node.name)
         # for i in node.__dict__:
         #    print(i)
         #    print(node.__getattribute__(i))

@@ -482,35 +482,24 @@ class FindOutputNodesVisitor(NodeVisitor):
     def __init__(self):
         self.nodes: List[DeclRefExpr] = []
 
+    def visit_ParenExpr(self, node: ParenExpr):
+        self.visit(node.expr)
+
+    def visit_DeclRefExpr(self, node: DeclRefExpr):
+        self.nodes.append(node)
+
+    def visit_UnOp(self, node: UnOp):
+        if node.op == "*":
+            self.visit(node.lvalue)
+
+    def visit_ArraySubscriptExpr(self, node: ArraySubscriptExpr):
+        self.visit(node.unprocessed_name)
+
     def visit_BinOp(self, node: BinOp):
         if node.op == "=":
-            if isinstance(node.lvalue, ParenExpr):
-                tmp = node.lvalue.expr
-                while isinstance(tmp, ParenExpr):
-                    tmp = tmp.expr
-                if isinstance(tmp, DeclRefExpr):
-                    self.nodes.append(tmp)
-                else:
-                    print("ERROR: after removing ParenExpr, lvalue is not a DeclRefExpr")
-            if isinstance(node.lvalue, DeclRefExpr):
-                self.nodes.append(node.lvalue)
-            if isinstance(node.lvalue, UnOp):
-                if node.lvalue.op == "*":
-                    if isinstance(node.lvalue.lvalue, DeclRefExpr):
-                        self.nodes.append(node.lvalue.lvalue)
-                    if isinstance(node.lvalue.lvalue, ArraySubscriptExpr):
-                        tmp = node.lvalue.lvalue
-                        while isinstance(tmp, ArraySubscriptExpr):
-                            tmp = tmp.unprocessed_name
-                        if isinstance(tmp, DeclRefExpr):
-                            self.nodes.append(tmp)
-            if isinstance(node.lvalue, ArraySubscriptExpr):
-                tmp = node.lvalue
-                while isinstance(tmp, ArraySubscriptExpr):
-                    tmp = tmp.unprocessed_name
-                if isinstance(tmp, DeclRefExpr):
-                    self.nodes.append(tmp)
-            self.visit(node.rvalue)
+            self.visit(node.lvalue)
+            if isinstance(node.rvalue, BinOp):
+                self.visit(node.rvalue)
 
     #def visit_TernaryExpr(self, node: TernaryExpr):
     #    used_vars_condition = [node for node in walk(node.cond) if isinstance(node, DeclRefExpr)]
@@ -522,6 +511,9 @@ class FindOutputNodesVisitor(NodeVisitor):
 class FindInputNodesVisitor(NodeVisitor):
     def __init__(self):
         self.nodes: List[DeclRefExpr] = []
+
+    def visit_ParenExpr(self, node: ParenExpr):
+        self.visit(node.expr)
 
     def visit_DeclRefExpr(self, node: DeclRefExpr):
         self.nodes.append(node)
