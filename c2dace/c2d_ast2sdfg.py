@@ -1535,6 +1535,7 @@ class AST2SDFG:
                     raise ValueError("pointer sizes mismatch")
             #print(datatype.__class__.__name__)
             #print(oldnode.name, sizes, datatype)
+            print("MALLOC:", oldnode.name, sizes)
             self.name_mapping[sdfg][oldnode.name] = find_new_array_name(
                 self.all_array_names, oldnode.name)
             sdfg.add_array(self.name_mapping[sdfg][oldnode.name],
@@ -1544,7 +1545,33 @@ class AST2SDFG:
             self.all_array_names.append(self.name_mapping[sdfg][oldnode.name])
 
         else:
-            print("WARNING allocating ", varname, " that is not marked as needed (this could be correct)")
+            mapped_name = self.name_mapping[sdfg][varname]
+            print("WARNING (re)allocating ", mapped_name, " that is not marked as needed (this could be correct)")
+            arr = sdfg._arrays.get(mapped_name)
+            if arr is None:
+                print("WARNING: array to overwrite not found in sdfg")
+                return
+
+            shape = []
+            if isinstance(rvalue, IntLiteral):
+                shape.insert(0, rvalue.value[0])
+            elif isinstance(rvalue, BinOp):
+                tw = TaskletWriter([], [], self.name_mapping[sdfg])
+                text = tw.write_tasklet_code(rvalue)
+                shape.insert(0, text)
+            else:
+                raise TypeError("malloc value cannot be parsed")
+
+            newshape = []
+            for s in shape:
+                try:
+                    newshape.append(int(s))
+                except:
+                    newshape.append(dace.symbolic.pystr_to_symbolic(s))
+
+            arr.shape = newshape
+            print("Modified array:", mapped_name, " to have shape:", newshape)
+            sdfg._arrays[mapped_name] = arr
 
     def binop2sdfg(self, node: BinOp, sdfg: SDFG):
         node.location_line = self.tasklet_count
@@ -1581,8 +1608,8 @@ class AST2SDFG:
                 while isinstance(rval, ParenExpr):
                     rval = rval.expr
 
-                if not isinstance(rval, DeclRefExpr):
-                    print("WARNING: incomplete array", i.name, "is not a DeclRefExpr")
+                if not isinstance(rval, DeclRefExpr) and not isinstance(rval, ArraySubscriptExpr):
+                    print("WARNING: rval of ", i.name, "is ", rval)
                     continue
                 
                 rval_mapped = self.get_name_mapping_in_context(sdfg).get(rval.name)
@@ -1597,6 +1624,8 @@ class AST2SDFG:
                 else:
                     print("WARNING: rval array of ", i.name, " is not an Array, hence we default to size 1")
                     sizes = ['1']
+
+                print("Initializing ", i.name, " with size ", sizes, " from ptr assignment")
 
                 del self.incomplete_arrays[(sdfg, i.name)]
                 self.name_mapping[sdfg][i.name] = find_new_array_name(
@@ -1663,6 +1692,7 @@ class AST2SDFG:
             self.translate(i, sdfg)
 
     def vardecl2sdfg(self, node: VarDecl, sdfg: SDFG):
+        print(node.name)
         # for i in node.__dict__:
         #    print(i)
         #    print(node.__getattribute__(i))
