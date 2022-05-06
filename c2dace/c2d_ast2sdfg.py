@@ -1539,8 +1539,6 @@ class AST2SDFG:
         for i in output_vars:
             arrays = self.get_arrays_in_context(sdfg)
 
-            # TODO map array instead of creating new one
-            # TODO create map of incomplete arrays to check if incomplete = incomplete
             if self.incomplete_arrays.get((sdfg, i.name)) is not None:
                 rval = node.rvalue
                 while isinstance(rval, ParenExpr):
@@ -1552,28 +1550,11 @@ class AST2SDFG:
                 
                 rval_mapped = self.get_name_mapping_in_context(sdfg).get(rval.name)
                 if rval_mapped not in arrays:
+                    # no need to handle this (i think) because we don't have double pointers
+                    print("Assigning to incomplete array")
                     continue
                 
-                rval_arr = arrays.get(rval_mapped)
-                datatype = rval_arr.dtype
-
-                if isinstance(rval_arr, dace.data.Array):
-                    sizes = rval_arr.shape
-                else:
-                    print("WARNING: rval array of ", i.name, " is not an Array, hence we default to size 1")
-                    sizes = ['1']
-
-                print("Initializing ", i.name, " with size ", sizes, " from ptr assignment")
-
-                del self.incomplete_arrays[(sdfg, i.name)]
-                self.name_mapping[sdfg][i.name] = find_new_array_name(
-                    self.all_array_names, i.name)
-                sdfg.add_array(self.name_mapping[sdfg][i.name],
-                            shape=sizes,
-                            dtype=datatype,
-                            transient=True)
-                self.all_array_names.append(self.name_mapping[sdfg][i.name])
-                arrays = self.get_arrays_in_context(sdfg)
+                self.name_mapping[sdfg][i.name] = rval_mapped
 
             mapped_name = self.get_name_mapping_in_context(sdfg).get(i.name)
 
