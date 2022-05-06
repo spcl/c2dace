@@ -14,12 +14,7 @@ int main(int argc, char** argv) {
 
 	fillStruct(ex);
 
-	double sum = 0;
-	for (int i = 0; i < 3; i++) {
-		sum += ex->start[i];
-	}
-
-	return sum;
+	return (ex->start)[1];
 }
 
 void fillStruct(example *ex) {

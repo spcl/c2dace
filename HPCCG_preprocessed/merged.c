@@ -168,21 +168,21 @@ int main(int argc, char *argv[])
   int stop_row = start_row+local_nrow-1;
 
   // Allocate arrays that are of length local_nrow
-  (A)->nnz_in_row = malloc(local_nrow * sizeof(int));
-  (A)->ptr_to_vals_in_row = malloc(local_nrow * sizeof(double*));
-  (A)->ptr_to_inds_in_row = malloc(local_nrow * sizeof(int*));
-  (A)->ptr_to_diags       = malloc(local_nrow * sizeof(double*));
+  A->nnz_in_row = malloc(local_nrow * sizeof(int));
+  A->ptr_to_vals_in_row = malloc(local_nrow * sizeof(double*));
+  A->ptr_to_inds_in_row = malloc(local_nrow * sizeof(int*));
+  A->ptr_to_diags       = malloc(local_nrow * sizeof(double*));
 
   double *x = malloc(local_nrow * sizeof(double));
   double *b = malloc(local_nrow * sizeof(double));
   double *xexact = malloc(local_nrow * sizeof(double));
 
   // Allocate arrays that are of length local_nnz
-  (A)->list_of_vals = malloc(local_nnz * sizeof(double));
-  (A)->list_of_inds = malloc(local_nnz * sizeof(int));
+  A->list_of_vals = malloc(local_nnz * sizeof(double));
+  A->list_of_inds = malloc(local_nnz * sizeof(int));
 
-  double* curvalptr = (A)->list_of_vals;
-  int* curindptr = (A)->list_of_inds;
+  double* curvalptr = A->list_of_vals;
+  int* curindptr = A->list_of_inds;
 
   long long nnzglobal = 0;
   for (int iz=0; iz<nz; iz++) {
@@ -191,8 +191,8 @@ int main(int argc, char *argv[])
 	int curlocalrow = iz*nx*ny+iy*nx+ix;
 	int currow = start_row+iz*nx*ny+iy*nx+ix;
 	int nnzrow = 0;
-	(A)->ptr_to_vals_in_row[curlocalrow] = curvalptr;
-	(A)->ptr_to_inds_in_row[curlocalrow] = curindptr;
+	(A->ptr_to_vals_in_row)[curlocalrow] = curvalptr;
+	(A->ptr_to_inds_in_row)[curlocalrow] = curindptr;
 	for (int sz=-1; sz<=1; sz++) {
 	  for (int sy=-1; sy<=1; sy++) {
 	    for (int sx=-1; sx<=1; sx++) {
@@ -203,7 +203,7 @@ int main(int argc, char *argv[])
               if (((((ix+sx>=0) && (ix+sx<nx)) && (iy+sy>=0)) && (iy+sy<ny)) && (curcol>=0 && curcol<total_nrow)) {
                 if (!use_7pt_stencil || (sz*sz+sy*sy+sx*sx<=1)) { // This logic will skip over point that are not part of a 7-pt stencil
                   if (curcol==currow) {
-		    (A)->ptr_to_diags[curlocalrow] = curvalptr;
+		    (A->ptr_to_diags)[curlocalrow] = curvalptr;
 		    (*(curvalptr++)) = 27.0;
 		  }
 		  else {
@@ -230,13 +230,13 @@ int main(int argc, char *argv[])
 
   if (debug) printf("Process %d of %d has %lld nonzeros.\n",rank,size,nnzglobal);
 
-  (A)->start_row = start_row ; 
-  (A)->stop_row = stop_row;
-  (A)->total_nrow = total_nrow;
-  (A)->total_nnz = total_nnz;
-  (A)->local_nrow = local_nrow;
-  (A)->local_ncol = local_nrow;
-  (A)->local_nnz = local_nnz;
+  A->start_row = start_row ; 
+  A->stop_row = stop_row;
+  A->total_nrow = total_nrow;
+  A->total_nnz = total_nnz;
+  A->local_nrow = local_nrow;
+  A->local_ncol = local_nrow;
+  A->local_nnz = local_nnz;
 
   int* niters = malloc(sizeof(int));
   double* normr = malloc(sizeof(double));
