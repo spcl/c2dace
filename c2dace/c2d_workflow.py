@@ -141,7 +141,7 @@ def c2d_workflow(_dir,
         if debug:
             print("="*10)
             print(transformation)
-            if transformation == ForDeclarer:
+            if transformation == ReplaceStructDeclStatements:
                 with open("tmp/middle.pseudo.cpp", "w") as f:
                     f.write(get_pseudocode(changed_ast))
             #PrinterVisitor().visit(changed_ast) 

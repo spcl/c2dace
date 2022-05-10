@@ -283,8 +283,10 @@ def remove_duplicates(vars: List[DeclRefExpr]):
     for i in vars:
         not_found = True
         for j in new_set:
-            if i.name == j.name:
+            if get_var_name(i) == get_var_name(j):
                 not_found = False
+                break
+
         if not_found:
             new_set.append(i)
     return new_set
@@ -1421,13 +1423,7 @@ class AST2SDFG:
             setattr(tasklet, "code", CodeBlock(text, dace.Language.CPP))
 
     def malloc2sdfg(self, node: BinOp, sdfg: SDFG):
-        if isinstance(node.lvalue, DeclRefExpr):
-            varname = node.lvalue.name
-        elif isinstance(node.lvalue, ParenExpr):
-            varname = node.lvalue.expr.name
-        else:
-            print("WARNING: Unknown malloc2sdfg lvalue type:", node.lvalue)
-            varname = node.lvalue.name
+        varname = get_var_name(node.lvalue)
 
         #print("VARNAME:", varname)
 
@@ -1469,9 +1465,13 @@ class AST2SDFG:
                 if (totalsize != 1):
                     print("Not Match for sizes:", totalsize, sizes[0])
                     raise ValueError("pointer sizes mismatch")
+            
+            # check if we have a double pointer
+            if isinstance(oldnode.type.pointee_type, Pointer) and isinstance(oldnode.type.pointee_type.pointee_type, Pointer):
+                sizes.append(0)
             #print(datatype.__class__.__name__)
             #print(oldnode.name, sizes, datatype)
-            print("MALLOC:", oldnode.name, sizes)
+            print("mallocing ", oldnode.name, " of size ", sizes, " and type ", datatype)
             self.name_mapping[sdfg][oldnode.name] = find_new_array_name(
                 self.all_array_names, oldnode.name)
             sdfg.add_array(self.name_mapping[sdfg][oldnode.name],
@@ -1482,32 +1482,37 @@ class AST2SDFG:
 
         else:
             mapped_name = self.name_mapping[sdfg][varname]
-            print("WARNING (re)allocating ", mapped_name, " that is not marked as needed (this could be correct)")
             arr = sdfg._arrays.get(mapped_name)
             if arr is None:
                 print("WARNING: array to overwrite not found in sdfg")
                 return
 
-            shape = []
+            datatype = arr.dtype
+
+            shape = list(arr.shape)
+
+            # check if we are assigning to the elements of an array
+            if isinstance(node.lvalue, ArraySubscriptExpr):
+                index = 1
+            else:
+                index = 0
+
             if isinstance(rvalue, IntLiteral):
-                shape.insert(0, rvalue.value[0])
+                shape[0] = rvalue.value[0]
             elif isinstance(rvalue, BinOp):
                 tw = TaskletWriter([], [], self.name_mapping[sdfg])
                 text = tw.write_tasklet_code(rvalue)
-                shape.insert(0, text)
+                shape[index] = text
             else:
                 raise TypeError("malloc value cannot be parsed")
 
-            newshape = []
-            for s in shape:
-                try:
-                    newshape.append(int(s))
-                except:
-                    newshape.append(dace.symbolic.pystr_to_symbolic(s))
-
-            arr.shape = newshape
-            print("Modified array:", mapped_name, " to have shape:", newshape)
-            sdfg._arrays[mapped_name] = arr
+            print("Modified array:", mapped_name, " to have shape:", shape)
+            self.name_mapping[sdfg][varname] = find_new_array_name(self.all_array_names, varname)
+            sdfg.add_array(self.name_mapping[sdfg][varname],
+                           shape=shape,
+                           dtype=datatype,
+                           transient=True)
+            self.all_array_names.append(self.name_mapping[sdfg][varname])
 
     def binop2sdfg(self, node: BinOp, sdfg: SDFG):
         node.location_line = self.tasklet_count
@@ -1551,7 +1556,7 @@ class AST2SDFG:
                 rval_mapped = self.get_name_mapping_in_context(sdfg).get(rval.name)
                 if rval_mapped not in arrays:
                     # no need to handle this (i think) because we don't have double pointers
-                    print("Assigning to incomplete array")
+                    print("Assigning to incomplete array ", i.name , " with rval ", rval)
                     continue
                 
                 self.name_mapping[sdfg][i.name] = rval_mapped

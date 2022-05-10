@@ -77,8 +77,8 @@ void HPC_sparsemv( HPC_Sparse_Matrix *A, double* x, double* y)
 void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double tolerance, int* niters, double* normr)
 
 {
-  int nrow = A->local_nrow;
-  int ncol = A->local_ncol;
+  double nrow = A->local_nrow;
+  double ncol = A->local_ncol;
 
   //double r[nrow];
   //double p[ncol]; // In parallel case, A is rectangular
@@ -88,7 +88,8 @@ void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double to
   double* Ap = malloc(nrow * sizeof(double));
 
   double norm = 0.0;
-  double rtrans = 0.0;
+  double* rtrans = malloc(sizeof(double));
+  (*rtrans) = 0.0;
   double oldrtrans = 0.0;
 
   int rank = 0; // Serial case (not using MPI)
@@ -101,8 +102,8 @@ void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double to
   waxpby(nrow, 1.0, x, 0.0, x, p);
   HPC_sparsemv(A, p, Ap);
   waxpby(nrow, 1.0, b, -1.0, Ap, r);
-  ddot(nrow, r, r, &rtrans);
-  norm = sqrt(rtrans);
+  ddot(nrow, r, r, rtrans);
+  norm = sqrt(*rtrans);
 
   if (rank==0) printf("Initial Residual = %e\n", norm);
 
@@ -110,22 +111,23 @@ void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double to
     if (k == 1) {
       waxpby(nrow, 1.0, r, 0.0, r, p);
 	  } else {
-      oldrtrans = rtrans;
-      ddot (nrow, r, r, &rtrans);// 2*nrow ops
-      double beta = rtrans/oldrtrans;
+      oldrtrans = (*rtrans);
+      ddot (nrow, r, r, rtrans);// 2*nrow ops
+      double beta = (*rtrans)/oldrtrans;
       waxpby (nrow, 1.0, r, beta, p, p);// 2*nrow ops
     }
-    norm = sqrt(rtrans);
+    norm = sqrt(*rtrans);
     if (rank==0 && (k%print_freq == 0 || k+1 == max_iter))
     printf("Iteration = %d, Residual = %e\n", k, norm);
     
 
     HPC_sparsemv(A, p, Ap); // 2*nnz ops
-    double alpha = 0.0;
-    ddot(nrow, p, Ap, &alpha); // 2*nrow ops
-    alpha = rtrans/alpha;
-    waxpby(nrow, 1.0, x, alpha, p, x);// 2*nrow ops
-    waxpby(nrow, 1.0, r, -alpha, Ap, r);// 2*nrow ops
+    double* alpha = malloc(sizeof(double));
+    (*alpha) = 0.0;
+    ddot(nrow, p, Ap, alpha); // 2*nrow ops
+    (*alpha) = (*rtrans)/(*alpha);
+    waxpby(nrow, 1.0, x, (*alpha), p, x);// 2*nrow ops
+    waxpby(nrow, 1.0, r, -(*alpha), Ap, r);// 2*nrow ops
     *niters = k;
     }
 
@@ -157,11 +159,11 @@ int main(int argc, char *argv[])
   // Set this bool to true if you want a 7-pt stencil instead of a 27 pt stencil
   int use_7pt_stencil = 0;
 
-  int local_nrow = nx*ny*nz; // This is the size of our subblock
+  double local_nrow = nx*ny*nz; // This is the size of our subblock
 
-  int local_nnz = 27*local_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
+  double local_nnz = 27*local_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
 
-  int total_nrow = local_nrow*size; // Total number of grid points in mesh
+  double total_nrow = local_nrow*size; // Total number of grid points in mesh
   long long total_nnz = 27* (long long) total_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
 
   int start_row = local_nrow*rank; // Each processor gets a section of a chimney stack domain
@@ -188,39 +190,39 @@ int main(int argc, char *argv[])
   for (int iz=0; iz<nz; iz++) {
     for (int iy=0; iy<ny; iy++) {
       for (int ix=0; ix<nx; ix++) {
-	int curlocalrow = iz*nx*ny+iy*nx+ix;
-	int currow = start_row+iz*nx*ny+iy*nx+ix;
-	int nnzrow = 0;
-	(A->ptr_to_vals_in_row)[curlocalrow] = curvalptr;
-	(A->ptr_to_inds_in_row)[curlocalrow] = curindptr;
-	for (int sz=-1; sz<=1; sz++) {
-	  for (int sy=-1; sy<=1; sy++) {
-	    for (int sx=-1; sx<=1; sx++) {
-	      int curcol = currow+sz*nx*ny+sy*nx+sx;
-//            Since we have a stack of nx by ny by nz domains , stacking in the z direction, we check to see
-//            if sx and sy are reaching outside of the domain, while the check for the curcol being valid
-//            is sufficient to check the z values
+        int curlocalrow = iz*nx*ny+iy*nx+ix;
+        int currow = start_row+iz*nx*ny+iy*nx+ix;
+        int nnzrow = 0;
+        (A->ptr_to_vals_in_row)[curlocalrow] = curvalptr;
+        (A->ptr_to_inds_in_row)[curlocalrow] = curindptr;
+
+        for (int sz=-1; sz<=1; sz++) {
+          for (int sy=-1; sy<=1; sy++) {
+            for (int sx=-1; sx<=1; sx++) {
+              int curcol = currow+sz*nx*ny+sy*nx+sx;
+              // Since we have a stack of nx by ny by nz domains , stacking in the z direction, we check to see
+              // if sx and sy are reaching outside of the domain, while the check for the curcol being valid
+              // is sufficient to check the z values
               if (((((ix+sx>=0) && (ix+sx<nx)) && (iy+sy>=0)) && (iy+sy<ny)) && (curcol>=0 && curcol<total_nrow)) {
                 if (!use_7pt_stencil || (sz*sz+sy*sy+sx*sx<=1)) { // This logic will skip over point that are not part of a 7-pt stencil
                   if (curcol==currow) {
-		    (A->ptr_to_diags)[curlocalrow] = curvalptr;
-		    (*(curvalptr++)) = 27.0;
-		  }
-		  else {
-		    (*(curvalptr++)) = -1.0;
+                    (A->ptr_to_diags)[curlocalrow] = curvalptr;
+                    (*(curvalptr++)) = 27.0;
+                  } else {
+                    (*(curvalptr++)) = -1.0;
                   }
-		  (*(curindptr++)) = curcol;
-		  nnzrow++;
-	        } 
+                  (*(curindptr++)) = curcol;
+                  nnzrow++;
+                } 
               }
-	    } // end sx loop
+            } // end sx loop
           } // end sy loop
         } // end sz loop
-	(A->nnz_in_row)[curlocalrow] = nnzrow;
-	nnzglobal += nnzrow;
-	(x)[curlocalrow] = 0.0;
-	(b)[curlocalrow] = 27.0 - ((double) (nnzrow-1));
-	(xexact)[curlocalrow] = 1.0;
+        (A->nnz_in_row)[curlocalrow] = nnzrow;
+        nnzglobal += nnzrow;
+        (x)[curlocalrow] = 0.0;
+        (b)[curlocalrow] = 27.0 - ((double) (nnzrow-1));
+        (xexact)[curlocalrow] = 1.0;
       } // end ix loop
      } // end iy loop
   } // end iz loop  

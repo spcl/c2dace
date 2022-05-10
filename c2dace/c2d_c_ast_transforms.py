@@ -189,26 +189,20 @@ class InitExtractor(NodeTransformer):
                 continue
 
             for i in res:
+                '''
+                # check if the init is malloc
+                if isinstance(i.init, CallExpr) and isinstance(i.init.name, DeclRefExpr) and i.init.name.name != "malloc":
+                    # add also an init with a concrete value s.t. the transient is always initialized
+                    newbody.append(
+                        BinOp(op="=",
+                                lvalue=DeclRefExpr(name=i.name),
+                                rvalue=IntLiteral(value="0")))
+                '''
+
                 newbody.append(
                     BinOp(op="=",
                             lvalue=DeclRefExpr(name=i.name),
                             rvalue=i.init))
-                
-                # check if the init is malloc
-                if not isinstance(i.init, CallExpr):
-                    continue
-
-                if not isinstance(i.init.name, DeclRefExpr):
-                    continue
-
-                if i.init.name.name != "malloc":
-                    continue
-
-                # add also an init with a concrete value s.t. the transient is always initialized
-                newbody.append(
-                    BinOp(op="=",
-                            lvalue=DeclRefExpr(name=i.name),
-                            rvalue=IntLiteral(value="0")))
 
         return BasicBlock(body=newbody)
 
