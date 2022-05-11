@@ -517,8 +517,7 @@ def generate_memlet(op, top_sdfg, state):
             op.name]].shape
     else:
         raise NameError("Variable name not found: ", op.name)
-    # print("SHAPE:")
-    # print(shape)
+    #print("SHAPE: ", shape)
     tmp_node = op
     indices = []
     while isinstance(tmp_node, ArraySubscriptExpr):
@@ -1541,25 +1540,36 @@ class AST2SDFG:
         output_names = []
         output_names_tasklet = []
 
+        sub_shape = None
+
         for i in output_vars:
             arrays = self.get_arrays_in_context(sdfg)
 
             if self.incomplete_arrays.get((sdfg, i.name)) is not None:
                 rval = node.rvalue
-                while isinstance(rval, ParenExpr):
-                    rval = rval.expr
-
-                if not isinstance(rval, DeclRefExpr) and not isinstance(rval, ArraySubscriptExpr):
-                    print("WARNING: rval of ", i.name, "is ", rval)
-                    continue
+                rval_name = get_var_name(rval)
                 
-                rval_mapped = self.get_name_mapping_in_context(sdfg).get(rval.name)
+                rval_mapped = self.get_name_mapping_in_context(sdfg).get(rval_name)
                 if rval_mapped not in arrays:
                     # no need to handle this (i think) because we don't have double pointers
-                    print("Assigning to incomplete array ", i.name , " with rval ", rval)
+                    print("Assigning to incomplete array ", i.name , " with rval ", rval, " ", rval_mapped)
                     continue
-                
+
                 self.name_mapping[sdfg][i.name] = rval_mapped
+
+                if isinstance(rval, ArraySubscriptExpr):
+                    # a = b[k] so we have to map it correctly
+                    rval_array = arrays.get(rval_mapped)
+
+                    if len(rval_array.shape) > 1:
+                        # array
+                        sub_shape = list(rval_array.shape[1:])
+                    else:
+                        # simple scalar
+                        sub_shape = [1]
+
+                    # TODO use subshape to set the right shape on assignment
+
 
             mapped_name = self.get_name_mapping_in_context(sdfg).get(i.name)
 
