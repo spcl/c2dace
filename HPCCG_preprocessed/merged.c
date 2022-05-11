@@ -174,6 +174,9 @@ int main(int argc, char *argv[])
   A->ptr_to_vals_in_row = malloc(local_nrow * sizeof(double*));
   A->ptr_to_inds_in_row = malloc(local_nrow * sizeof(int*));
   A->ptr_to_diags       = malloc(local_nrow * sizeof(double*));
+  (A->ptr_to_vals_in_row)[0] = malloc(local_nnz * sizeof(double));
+  (A->ptr_to_inds_in_row)[0] = malloc(local_nnz * sizeof(int));
+  (A->ptr_to_diags)[0] = malloc(local_nnz * sizeof(double));
 
   double *x = malloc(local_nrow * sizeof(double));
   double *b = malloc(local_nrow * sizeof(double));
@@ -184,7 +187,9 @@ int main(int argc, char *argv[])
   A->list_of_inds = malloc(local_nnz * sizeof(int));
 
   double* curvalptr = A->list_of_vals;
+  int curvalptr_index = 0;
   int* curindptr = A->list_of_inds;
+  int curindptr_index = 0;
 
   long long nnzglobal = 0;
   for (int iz=0; iz<nz; iz++) {
@@ -207,11 +212,20 @@ int main(int argc, char *argv[])
                 if (!use_7pt_stencil || (sz*sz+sy*sy+sx*sx<=1)) { // This logic will skip over point that are not part of a 7-pt stencil
                   if (curcol==currow) {
                     (A->ptr_to_diags)[curlocalrow] = curvalptr;
-                    (*(curvalptr++)) = 27.0;
+                    // TODO fix me
+                    //(*(curvalptr++)) = 27.0;
+                    curvalptr[curvalptr_index] = 27.0;
+                    curvalptr_index++;
                   } else {
-                    (*(curvalptr++)) = -1.0;
+                    // TODO fix me
+                    //(*(curvalptr++)) = -1.0;
+                    curvalptr[curvalptr_index] = -1.0;
+                    curvalptr_index++;
                   }
-                  (*(curindptr++)) = curcol;
+                  // TODO fix me
+                  //(*(curindptr++)) = curcol;
+                  curindptr[curindptr_index] = curcol;
+                  curindptr_index++;
                   nnzrow++;
                 } 
               }

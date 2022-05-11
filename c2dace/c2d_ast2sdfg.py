@@ -90,8 +90,8 @@ def make_nested_sdfg_with_no_context_change(top_sdfg: Cursor, new_sdfg: Cursor,
     call_nodes = filter(lambda x: hasattr(x, "type"), call_nodes)
     call_nodes = filter(lambda x: isinstance(x.type, Pointer), call_nodes)
 
-    write_vars = [node.lvalue for node in write_nodes] + list(call_nodes)
-    read_vars = copy.deepcopy(used_vars)
+    write_vars = [node.lvalue for node in write_nodes] + list(copy.deepcopy(call_nodes))
+    read_vars = copy.deepcopy(used_vars) + list(call_nodes)
     for i in write_vars:
         if i in read_vars:
             read_vars.remove(i)
@@ -744,7 +744,7 @@ class AST2SDFG:
         call_nodes = filter(lambda x: isinstance(x.type, Pointer), call_nodes)
 
         write_nodes = [node for node in binop_nodes if node.op == "="]
-        write_vars = [] + list(call_nodes)
+        write_vars = [] + list(copy.deepcopy(call_nodes))
         for n in write_nodes:
             tmp = n.lvalue
             while isinstance(tmp, ParenExpr):
@@ -752,7 +752,7 @@ class AST2SDFG:
 
             write_vars.append(tmp)
 
-        read_vars = copy.deepcopy(used_vars)
+        read_vars = copy.deepcopy(used_vars) + list(call_nodes)
         for i in write_vars:
             if i in read_vars:
                 read_vars.remove(i)
