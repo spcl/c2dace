@@ -1,5 +1,5 @@
-FILE := HPCCG_preprocessed/merged.c
-#FILE := simple_tests/array_pointers_assign.c
+#FILE := HPCCG_preprocessed/merged.c
+FILE := simple_tests/merged_test_2.c
 
 run:
 	python3 c2dace/c2d.py -f $(FILE)

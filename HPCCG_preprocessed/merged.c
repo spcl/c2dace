@@ -36,14 +36,8 @@ void ddot (int n, double* x, double* y, double* result)
 
 void waxpby (int n, double alpha, double* x, double beta, double* y, double* w)
 {  
-  if (alpha==1.0) {
-    for (int i=0; i<n; i++) w[i] = x[i] + beta * y[i];
-  }
-  else if(beta==1.0) {
-    for (int i=0; i<n; i++) w[i] = alpha * x[i] + y[i];
-  }
-  else {
-    for (int i=0; i<n; i++) w[i] = alpha * x[i] + beta * y[i];
+  for (int i=0; i<n; i++) {
+    w[i] = alpha * x[i] + beta * y[i];
   }
 }
 
