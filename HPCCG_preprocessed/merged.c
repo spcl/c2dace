@@ -17,6 +17,9 @@ struct HPC_Sparse_Matrix_STRUCT {
   double ** ptr_to_vals_in_row;
   int ** ptr_to_inds_in_row;
   double ** ptr_to_diags;
+
+  double *list_of_vals;   //needed for cleaning up memory
+  int *list_of_inds;      //needed for cleaning up memory
 };
 
 
@@ -170,6 +173,13 @@ int main(int argc, char *argv[])
   double *b = malloc(local_nrow * sizeof(double));
   double *xexact = malloc(local_nrow * sizeof(double));
 
+  // Allocate arrays that are of length local_nnz
+  A->list_of_vals = malloc(local_nnz * sizeof(double));
+  A->list_of_inds = malloc(local_nnz * sizeof(int));
+
+  double * curvalptr = A->list_of_vals;
+  int * curindptr = A->list_of_inds;
+
   long long nnzglobal = 0;
   for (int iz=0; iz<nz; iz++) {
     for (int iy=0; iy<ny; iy++) {
@@ -177,7 +187,8 @@ int main(int argc, char *argv[])
         int curlocalrow = iz*nx*ny+iy*nx+ix;
         int currow = start_row+iz*nx*ny+iy*nx+ix;
         int nnzrow = 0;
-
+        (A->ptr_to_vals_in_row)[curlocalrow] = curvalptr;
+        (A->ptr_to_inds_in_row)[curlocalrow] = curindptr;
         for (int sz=-1; sz<=1; sz++) {
           for (int sy=-1; sy<=1; sy++) {
             for (int sx=-1; sx<=1; sx++) {
@@ -187,7 +198,13 @@ int main(int argc, char *argv[])
               // is sufficient to check the z values
               if (((((ix+sx>=0) && (ix+sx<nx)) && (iy+sy>=0)) && (iy+sy<ny)) && (curcol>=0 && curcol<total_nrow)) {
                 if (!use_7pt_stencil || (sz*sz+sy*sy+sx*sx<=1)) { // This logic will skip over point that are not part of a 7-pt stencil
-                  // TODO fix me
+                  if (curcol==currow) {
+                    (A->ptr_to_diags)[curlocalrow] = curvalptr;
+                    *curvalptr++ = 27.0;
+                  } else {
+                    *curvalptr++ = -1.0;
+                  }
+                  *curindptr++ = curcol;
                   nnzrow++;
                 } 
               }

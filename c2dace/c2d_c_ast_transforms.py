@@ -24,6 +24,7 @@ class UnaryExtractor(NodeTransformer):
         self.count = count
 
     def visit_ForStmt(self, node: ForStmt):
+        print("for stmt")
         return ForStmt(init=node.init,
                        body=self.generic_visit(node.body[0]),
                        cond=node.cond,

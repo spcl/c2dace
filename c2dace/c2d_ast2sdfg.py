@@ -582,6 +582,7 @@ class AST2SDFG:
         self.libstates = ["print"]
         self.incomplete_arrays = {}
         self.name_mapping = name_mapping or NameMap()
+        self.arr_start_name_mapping = {}
         self.last_loop_continue = {}
         self.last_loop_break = {}
         self.last_loop_continue_state = {}
@@ -1479,6 +1480,24 @@ class AST2SDFG:
                            transient=True)
             self.all_array_names.append(self.name_mapping[sdfg][oldnode.name])
 
+            # add memlet to move the pointer
+            mapped_start_name = self.name_mapping[sdfg][oldnode.name] + "_start"
+            self.arr_start_name_mapping[oldnode.name] = mapped_start_name
+            sdfg.add_symbol(mapped_start_name, stype=int)
+
+            substate1 = add_simple_state_to_sdfg(
+                self, sdfg,
+                "_state" + str(node.location_line) + "_" + str(self.tasklet_count))
+            self.tasklet_count = self.tasklet_count + 1
+
+            substate2 = sdfg.add_state("_state" + str(node.location_line) + "_" + str(self.tasklet_count))
+            self.tasklet_count = self.tasklet_count + 1
+            self.last_sdfg_states[sdfg] = substate2
+
+            init = {mapped_start_name: "0"}
+            sdfg.add_edge(substate1, substate2,
+                        dace.InterstateEdge(assignments=init))
+
         else:
             mapped_name = self.name_mapping[sdfg][varname]
             arr = sdfg._arrays.get(mapped_name)
@@ -1513,6 +1532,47 @@ class AST2SDFG:
                            transient=True)
             self.all_array_names.append(self.name_mapping[sdfg][varname])
 
+    def pointerarith2sdfg(self, node: BinOp, sdfg: SDFG):
+        ptr_name = get_var_name(node.lvalue)
+        mapped_name = self.name_mapping[sdfg][ptr_name]
+        mapped_start_name = self.arr_start_name_mapping[ptr_name]
+
+        substate1 = add_simple_state_to_sdfg(
+            self, sdfg,
+            "_state" + str(node.location_line) + "_" + str(self.tasklet_count))
+        self.tasklet_count = self.tasklet_count + 1
+
+        substate2 = sdfg.add_state("_state" + str(node.location_line) + "_" + str(self.tasklet_count))
+        self.tasklet_count = self.tasklet_count + 1
+        self.last_sdfg_states[sdfg] = substate2
+
+        init = {mapped_start_name: mapped_start_name + "+1"}
+        sdfg.add_edge(substate1, substate2,
+                    dace.InterstateEdge(assignments=init))
+
+        array = self.get_arrays_in_context(sdfg)[mapped_name]
+        view_name = find_new_array_name(self.all_array_names, ptr_name+"_view")
+        str_shape = []
+        for i in array.shape:
+            str_shape.append(str(i))
+
+        str_shape[0] += "-" + mapped_start_name
+        new_shape = []
+        for i in str_shape:
+            new_shape.append(dace.symbolic.pystr_to_symbolic(i))
+
+        sdfg.add_view(view_name, str_shape, array.dtype, offset=[mapped_start_name])
+
+        substate = add_simple_state_to_sdfg(
+            self, sdfg,
+            "_state" + str(node.location_line) + "_" + str(self.tasklet_count))
+        self.tasklet_count = self.tasklet_count + 1
+
+        u = substate.add_access(mapped_name)
+        v = substate.add_access(view_name)
+        memlet = dace.memlet.Memlet(expr=mapped_name)
+        substate.add_edge(u, None, v, None, memlet)
+
     def binop2sdfg(self, node: BinOp, sdfg: SDFG):
         node.location_line = self.tasklet_count
         call_expressions = [n for n in walk(node) if isinstance(n, CallExpr)]
@@ -1533,6 +1593,17 @@ class AST2SDFG:
         if node.op == "**":
             print("ERROR HERE")
         self.tasklet_count += 1
+
+        arrays = self.get_arrays_in_context(sdfg)
+        mapped_name = self.name_mapping[sdfg].get(get_var_name(node.lvalue))
+        array = None
+        if mapped_name in arrays and isinstance(arrays[mapped_name], dace.data.Array):
+            self_references = [n for n in walk(node.rvalue) if n == node.lvalue]
+            intlit_expr = [n for n in walk(node.rvalue) if isinstance(n, IntLiteral)]
+            if len(self_references) == 1 and len(intlit_expr) == 1:
+                print("Pointer arith")
+                self.pointerarith2sdfg(node, sdfg)
+                return
 
         outputnodefinder = FindOutputNodesVisitor()
         outputnodefinder.visit(node)
