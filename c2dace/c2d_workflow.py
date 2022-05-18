@@ -219,6 +219,7 @@ def c2d_workflow(_dir,
     globalsdfg.save("tmp/" + filecore + "-promoted-notfused.sdfg")
 
     globalsdfg.simplify()
+    globalsdfg.save("tmp/" + filecore + "-simplified.sdfg")
     globalsdfg.apply_transformations_repeated(PruneConnectors)
     xfh.split_interstate_edges(globalsdfg)
     propagate_memlets_sdfg(globalsdfg)
@@ -279,8 +280,46 @@ def shortcut(filecore):
     from dace.sdfg.analysis import scalar_to_symbol as scal2sym
     import time
 
-    globalsdfg = SDFG("_" + filecore).from_file("tmp/" + filecore + "-perf.sdfg")
+    globalsdfg = SDFG("_" + filecore).from_file("tmp/" + filecore + "-promoted-notfused.sdfg")
+    globalsdfg.simplify()
+    globalsdfg.apply_transformations_repeated(PruneConnectors)
+    xfh.split_interstate_edges(globalsdfg)
+    propagate_memlets_sdfg(globalsdfg)
 
+    for sd in globalsdfg.all_sdfgs_recursive():
+        promoted = scal2sym.promote_scalars_to_symbols(sd)
+        print(sd.label, 'promoting', promoted)
+    globalsdfg.save("tmp/" + filecore + "-nomap.sdfg")
+    xform_types = [
+        TrivialMapElimination, HoistState, InlineTransients, AugAssignToWCR
+    ]
+    for i in range(4):
+        propagate_memlets_sdfg(globalsdfg)
+        globalsdfg.simplify()
+        xforms = globalsdfg.apply_transformations_repeated(xform_types,
+                                                           validate_all=True)
+
+        # Strict transformations and loop parallelization
+        transformed = True
+        while transformed:
+            globalsdfg.apply_transformations_repeated(xform_types)
+            for sd in globalsdfg.all_sdfgs_recursive():
+                xfh.split_interstate_edges(sd)
+            num = globalsdfg.apply_transformations_repeated(RefineNestedAccess)
+            print("Refine nested acesses:", num)
+            l2ms = globalsdfg.apply_transformations_repeated(LoopToMap,
+                                                             validate=False)
+            transformed = l2ms > 0
+
+        globalsdfg.apply_transformations_repeated(LoopToMap, validate=False)
+
+        if xforms == 0:
+            break
+    for sd in globalsdfg.all_sdfgs_recursive():
+        sd.apply_transformations_repeated(StateAssignElimination,
+                                          validate=False)
+
+    globalsdfg.save("tmp/" + filecore + "-perf.sdfg")
     from dace.transformation.auto import auto_optimize as aopt
     aopt.move_small_arrays_to_stack(globalsdfg)
     aopt.make_transients_persistent(globalsdfg, dace.DeviceType.CPU)

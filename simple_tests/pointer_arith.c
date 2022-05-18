@@ -8,5 +8,7 @@ int main(int argc, char** argv) {
 		arr++;
 	}
 
+	arr = arr - 3;
+
 	return arr[0] + arr[2];
 }
