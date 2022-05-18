@@ -159,6 +159,9 @@ def make_nested_sdfg_with_no_context_change(top_sdfg: Cursor, new_sdfg: Cursor,
     sym_dict = {}
     for i in top_sdfg.symbols:
         sym_dict[i] = i
+
+    for i in state.arr_start_name_mapping.values():
+        sym_dict[i] = i
     # for i in top_sdfg.arrays:
     # m = top_sdfg.arrays[i]
     # print("ARS no context change:", i, m.shape, m.total_size)
@@ -911,6 +914,9 @@ class AST2SDFG:
         sym_dict = {}
         for i in sdfg.symbols:
             sym_dict[i] = i
+        for i in self.arr_start_name_mapping.values():
+            sym_dict[i] = i
+
         for i in self.libstates:
             self.name_mapping[new_sdfg][i] = find_new_array_name(
                 self.all_array_names, i)
