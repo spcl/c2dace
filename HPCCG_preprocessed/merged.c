@@ -200,11 +200,14 @@ int main(int argc, char *argv[])
                 if (!use_7pt_stencil || (sz*sz+sy*sy+sx*sx<=1)) { // This logic will skip over point that are not part of a 7-pt stencil
                   if (curcol==currow) {
                     (A->ptr_to_diags)[curlocalrow] = curvalptr;
-                    *curvalptr++ = 27.0;
+                    curvalptr[0] = 27.0;
+                    curvalptr++;
                   } else {
-                    *curvalptr++ = -1.0;
+                    curvalptr[0] = -1.0;
+                    curvalptr++;
                   }
-                  *curindptr++ = curcol;
+                  curindptr[0] = curcol;
+                  curindptr++;
                   nnzrow++;
                 } 
               }

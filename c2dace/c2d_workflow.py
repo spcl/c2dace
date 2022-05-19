@@ -214,6 +214,7 @@ def c2d_workflow(_dir,
                 #node.instrument = dace.InstrumentationType.Timer
     globalsdfg.save("tmp/" + filecore + "-untransformed.sdfg")
     globalsdfg.validate()
+
     for sd in globalsdfg.all_sdfgs_recursive():
         promoted = scal2sym.promote_scalars_to_symbols(sd)
     globalsdfg.save("tmp/" + filecore + "-promoted-notfused.sdfg")
@@ -229,8 +230,12 @@ def c2d_workflow(_dir,
         print(sd.label, 'promoting', promoted)
     globalsdfg.save("tmp/" + filecore + "-nomap.sdfg")
     xform_types = [
-        TrivialMapElimination, HoistState, InlineTransients, AugAssignToWCR
+        TrivialMapElimination,
+        HoistState,
+        InlineTransients,
+        AugAssignToWCR
     ]
+
     for i in range(4):
         propagate_memlets_sdfg(globalsdfg)
         globalsdfg.simplify()
@@ -245,8 +250,7 @@ def c2d_workflow(_dir,
                 xfh.split_interstate_edges(sd)
             num = globalsdfg.apply_transformations_repeated(RefineNestedAccess)
             print("Refine nested acesses:", num)
-            l2ms = globalsdfg.apply_transformations_repeated(LoopToMap,
-                                                             validate=False)
+            l2ms = globalsdfg.apply_transformations_repeated(LoopToMap, validate=False)
             transformed = l2ms > 0
 
         globalsdfg.apply_transformations_repeated(LoopToMap, validate=False)
