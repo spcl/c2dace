@@ -129,33 +129,25 @@ class IndicesExtractor(NodeTransformer):
             newbody.append(self.visit(child))
         return BasicBlock(body=newbody)
 
+class ArrayPointerExtractorNodeLister(NodeVisitor):
+    def __init__(self):
+        self.nodes: List[DeclRefExpr] = []
+
+    def visit_DeclRefExpr(self, node: DeclRefExpr):
+        #if not isinstance(node.index,IntLiteral):
+        self.nodes.append(node)
+        return self.generic_visit(node)
+
+    def visit_BasicBlock(self, node: BasicBlock):
+        return
+
 class ArrayPointerExtractor(NodeTransformer):
     def __init__(self):
         self.array_map = dict()
+        self.global_array_map = dict()
         self.count = 0
 
-    def visit_ArraySubscriptExpr(self, node: ArraySubscriptExpr):
-        ptr_name = self.array_map.get(node.name)
-        if ptr_name is None:
-            print("Warning undeclared array in ArrayPointerExtractor: " + ptr_name)
-            return node
-
-        ptr_index = DeclRefExpr(name=ptr_name, type=Int())
-        binop = BinOp(op="+", lvalue=node.index, rvalue=ptr_index)
-        return ArraySubscriptExpr(
-            name=node.name,
-            indices=node.indices,
-            type=node.type,
-            unprocessed_name=self.visit(node.unprocessed_name),
-            index=binop)
-
-    def visit_BinOp(self, node: BinOp):
-        if node.op != "=":
-            return self.generic_visit(node)
-
-        if not isinstance(node.lvalue, DeclRefExpr):
-            return self.generic_visit(node)
-
+    def pointer_increment(self, node: BinOp):
         name = node.lvalue.name
 
         if name not in self.array_map:
@@ -173,11 +165,82 @@ class ArrayPointerExtractor(NodeTransformer):
             return self.generic_visit(node)
 
         start_ptr_name = self.array_map[name]
-        start_ptr = DeclRefExpr(name=start_ptr_name, type=Int())
+        start_ptr = DeclRefExpr(name=start_ptr_name, type=Pointer(pointee_type=Int()))
         binop = BinOp(op=op, lvalue=copy.deepcopy(start_ptr), rvalue=rval)
 
         return BinOp(op="=", lvalue=start_ptr, rvalue=binop)
 
+    def pointer_assignment(self, node: BinOp):
+        if not isinstance(node.lvalue, ArraySubscriptExpr) or not isinstance(node.rvalue, DeclRefExpr):
+            return self.generic_visit(node)
+
+        ltype = node.lvalue.type
+        rtype = node.rvalue.type
+
+        if not isinstance(ltype, Pointer) or ltype != rtype:
+            return self.generic_visit(node)
+
+        lval = self.visit(node.lvalue)
+        rval = self.visit(node.rvalue)
+
+        start_ptr_name = self.array_map.get(rval.name)
+        if start_ptr_name is None:
+            print("Warning undeclared array in ArrayPointerExtractor: " + rval.name)
+            return node
+
+        start_ptr = DeclRefExpr(name=start_ptr_name, type=Pointer(pointee_type=Int()))
+        pointer_binop = BinOp(op="+", lvalue=rval, rvalue=start_ptr)
+        binop = BinOp(op="=", lvalue=lval, rvalue=pointer_binop)
+
+        return binop
+
+    def visit_ArraySubscriptExpr(self, node: ArraySubscriptExpr):
+        ptr_name = self.array_map.get(node.name)
+        if ptr_name is None:
+            print("Warning undeclared array in ArrayPointerExtractor: " + node.name)
+            return node
+
+        ptr_index = DeclRefExpr(name=ptr_name, type=Pointer(pointee_type=Int()))
+        binop = BinOp(op="+", lvalue=node.index, rvalue=ptr_index)
+        return ArraySubscriptExpr(
+            name=node.name,
+            indices=node.indices,
+            type=node.type,
+            unprocessed_name=self.visit(node.unprocessed_name),
+            index=binop)
+
+    def visit_BinOp(self, node: BinOp):
+        if node.op != "=" :
+            return self.generic_visit(node)
+
+        if isinstance(node.lvalue, DeclRefExpr):
+            return self.pointer_increment(node)
+        else:
+            return self.pointer_assignment(node)
+
+    def visit_CallExpr(self, node: CallExpr):
+        if node.name.name in ["malloc", "expf", "powf", "sqrt", "cbrt"]:
+            return self.generic_visit(node)
+
+        lister = ArrayPointerExtractorNodeLister()
+        lister.visit(node)
+        res = lister.nodes
+
+        new_args = copy.deepcopy(node.args)
+
+        for n in res:
+            name = n.name
+            varname = self.array_map.get(name)
+            if varname is None:
+                continue
+
+            ptr_var = DeclRefExpr(name=varname, type=Pointer(pointee_type=Int()))
+            new_args.append(ptr_var)
+        
+        node.args = new_args
+
+        return self.generic_visit(node)
+    
     def visit_BasicBlock(self, node: BasicBlock):
         newbody = []
 
@@ -190,15 +253,37 @@ class ArrayPointerExtractor(NodeTransformer):
             if not isinstance(vardecl.init, CallExpr) or not isinstance(vardecl.init.name, DeclRefExpr) or vardecl.init.name.name != "malloc":
                 continue
 
-            self.array_map[vardecl.name] = "tmp_array_ptr_" + str(self.count)
+            varname = "tmp_array_ptr_" + str(self.count)
+            self.array_map[vardecl.name] = varname
             self.count += 1
-            newbody.append(VarDecl(name=self.array_map[vardecl.name], type=Int(), init=IntLiteral(value="0")))
+
+            call_init = CallExpr(name=DeclRefExpr(name="malloc"), args=[IntLiteral(value="1")])
+            newbody.append(VarDecl(name=self.array_map[vardecl.name], type=Pointer(pointee_type=Int()), init=call_init))
+
+            init = DeclRefExpr(name=varname, type=Pointer(pointee_type=Int()))
+            newbody.append(BinOp(op="=", lvalue=init, rvalue=IntLiteral(value="0")))
 
         return BasicBlock(body=newbody)
 
     def visit_FuncDecl(self, node: FuncDecl):
-        print(node.name)
+        self.array_map = dict()
+
+        if node.name != "main":
+            newargs = copy.deepcopy(node.args)
+            for n in node.args:
+                if not isinstance(n.type, Pointer):
+                    continue
+
+                varname = "tmp_array_ptr_" + str(self.count)
+                self.array_map[n.name] = varname
+                self.count += 1
+                newargs.append(ParmDecl(name=varname, type=Pointer(pointee_type=Int())))
+
+            node.args = newargs
+
         self.generic_visit(node)
+        self.global_array_map[node.name] = self.array_map
+
         return node
 
     def visit_AST(self, node: AST):

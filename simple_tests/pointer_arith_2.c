@@ -1,6 +1,6 @@
 int main(int argc, char** argv) {
 
-	double size = 3;
+	int size = 3;
 	double* arr = malloc(size * sizeof(double));
 
 	arr++;

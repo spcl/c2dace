@@ -16,5 +16,5 @@ int main(int argc, char** argv) {
 		data++;
 	}
 
-	return arr[1][0];
+	return arr[1][1];
 }
