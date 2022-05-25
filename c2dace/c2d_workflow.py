@@ -6,6 +6,7 @@ import dace
 from dace.sdfg import *
 from dace.data import Scalar
 from dace.properties import CodeBlock
+from regex import W
 
 from c2d_ast2sdfg import *
 from c2d_c_ast_transforms import *
@@ -130,6 +131,7 @@ def c2d_workflow(_dir,
         CallExtractor,
         MoveReturnValueToArguments,
         CompoundToBinary,
+        ArrayPointerExtractor,
         IndicesExtractor,
         InitExtractor,
         ForDeclarer,
@@ -141,7 +143,7 @@ def c2d_workflow(_dir,
         if debug:
             print("="*10)
             print(transformation)
-            if transformation == CallExtractor:
+            if transformation == IndicesExtractor:
                 with open("tmp/middle.pseudo.cpp", "w") as f:
                     f.write(get_pseudocode(changed_ast))
             #PrinterVisitor().visit(changed_ast) 

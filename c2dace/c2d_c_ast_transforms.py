@@ -129,6 +129,81 @@ class IndicesExtractor(NodeTransformer):
             newbody.append(self.visit(child))
         return BasicBlock(body=newbody)
 
+class ArrayPointerExtractor(NodeTransformer):
+    def __init__(self):
+        self.array_map = dict()
+        self.count = 0
+
+    def visit_ArraySubscriptExpr(self, node: ArraySubscriptExpr):
+        ptr_name = self.array_map.get(node.name)
+        if ptr_name is None:
+            print("Warning undeclared array in ArrayPointerExtractor: " + ptr_name)
+            return node
+
+        ptr_index = DeclRefExpr(name=ptr_name, type=Int())
+        binop = BinOp(op="+", lvalue=node.index, rvalue=ptr_index)
+        return ArraySubscriptExpr(
+            name=node.name,
+            indices=node.indices,
+            type=node.type,
+            unprocessed_name=self.visit(node.unprocessed_name),
+            index=binop)
+
+    def visit_BinOp(self, node: BinOp):
+        if node.op != "=":
+            return self.generic_visit(node)
+
+        if not isinstance(node.lvalue, DeclRefExpr):
+            return self.generic_visit(node)
+
+        name = node.lvalue.name
+
+        if name not in self.array_map:
+            print("Warning undeclared array in ArrayPointerExtractor: " + name)
+            return self.generic_visit(node)
+
+        if not isinstance(node.rvalue, BinOp):
+            return self.generic_visit(node)
+
+        rval = node.rvalue.rvalue
+        lval = node.rvalue.lvalue
+        op = node.rvalue.op
+
+        if not isinstance(lval, DeclRefExpr):
+            return self.generic_visit(node)
+
+        start_ptr_name = self.array_map[name]
+        start_ptr = DeclRefExpr(name=start_ptr_name, type=Int())
+        binop = BinOp(op=op, lvalue=copy.deepcopy(start_ptr), rvalue=rval)
+
+        return BinOp(op="=", lvalue=start_ptr, rvalue=binop)
+
+    def visit_BasicBlock(self, node: BasicBlock):
+        newbody = []
+
+        for child in node.body:
+            newbody.append(self.visit(child))
+            if not isinstance(child, DeclStmt) or len(child.vardecl) != 1:
+                continue
+
+            vardecl = child.vardecl[0]
+            if not isinstance(vardecl.init, CallExpr) or not isinstance(vardecl.init.name, DeclRefExpr) or vardecl.init.name.name != "malloc":
+                continue
+
+            self.array_map[vardecl.name] = "tmp_array_ptr_" + str(self.count)
+            self.count += 1
+            newbody.append(VarDecl(name=self.array_map[vardecl.name], type=Int(), init=IntLiteral(value="0")))
+
+        return BasicBlock(body=newbody)
+
+    def visit_FuncDecl(self, node: FuncDecl):
+        print(node.name)
+        self.generic_visit(node)
+        return node
+
+    def visit_AST(self, node: AST):
+        self.generic_visit(node)
+        return node
 
 class InitExtractorNodeLister(NodeVisitor):
     def __init__(self):

@@ -160,8 +160,6 @@ def make_nested_sdfg_with_no_context_change(top_sdfg: Cursor, new_sdfg: Cursor,
     for i in top_sdfg.symbols:
         sym_dict[i] = i
 
-    for i in state.arr_start_name_mapping.values():
-        sym_dict[i] = i
     # for i in top_sdfg.arrays:
     # m = top_sdfg.arrays[i]
     # print("ARS no context change:", i, m.shape, m.total_size)
@@ -914,8 +912,6 @@ class AST2SDFG:
         sym_dict = {}
         for i in sdfg.symbols:
             sym_dict[i] = i
-        for i in self.arr_start_name_mapping.values():
-            sym_dict[i] = i
 
         for i in self.libstates:
             self.name_mapping[new_sdfg][i] = find_new_array_name(
@@ -1482,7 +1478,8 @@ class AST2SDFG:
                     raise ValueError("pointer sizes mismatch")
             
             # check if we have a double pointer
-            if isinstance(oldnode.type.pointee_type, Pointer) and isinstance(oldnode.type.pointee_type.pointee_type, Pointer):
+            #if isinstance(oldnode.type.pointee_type, Pointer) and isinstance(oldnode.type.pointee_type.pointee_type, Pointer):
+            if isinstance(oldnode.type.pointee_type, Pointer):
                 sizes.append(0)
             #print(datatype.__class__.__name__)
             #print(oldnode.name, sizes, datatype)
@@ -1494,24 +1491,6 @@ class AST2SDFG:
                            dtype=datatype,
                            transient=True)
             self.all_array_names.append(self.name_mapping[sdfg][oldnode.name])
-
-            # add memlet to move the pointer
-            mapped_start_name = self.name_mapping[sdfg][oldnode.name] + "_start"
-            self.arr_start_name_mapping[oldnode.name] = mapped_start_name
-            self.globalsdfg.add_symbol(mapped_start_name, stype=int)
-
-            substate1 = add_simple_state_to_sdfg(
-                self, sdfg,
-                "_state" + str(node.location_line) + "_" + str(self.tasklet_count))
-            self.tasklet_count = self.tasklet_count + 1
-
-            substate2 = sdfg.add_state("_state" + str(node.location_line) + "_" + str(self.tasklet_count))
-            self.tasklet_count = self.tasklet_count + 1
-            self.last_sdfg_states[sdfg] = substate2
-
-            init = {mapped_start_name: "0"}
-            sdfg.add_edge(substate1, substate2,
-                        dace.InterstateEdge(assignments=init))
 
         else:
             mapped_name = self.name_mapping[sdfg][varname]
@@ -1569,33 +1548,13 @@ class AST2SDFG:
         self.tasklet_count += 1
 
         # check if we are incrementing an array pointer
-        arrays = self.get_arrays_in_context(sdfg)
-        mapped_name = self.name_mapping[sdfg].get(get_var_name(node.lvalue))
-        if mapped_name in arrays and isinstance(arrays[mapped_name], dace.data.Array) and isinstance(node.rvalue, BinOp):
-            self_references = [n for n in walk(node.rvalue) if n == node.lvalue]
-            intlit_expr = [n for n in walk(node.rvalue) if isinstance(n, IntLiteral)]
-            if len(self_references) == 1 and len(intlit_expr) == 1:
-                int_val = intlit_expr[0].value
-                if isinstance(int_val, List):
-                    int_val = int_val[0]
-                else:
-                    int_val = str(int_val)
-
-                mapped_start_name = self.arr_start_name_mapping[get_var_name(node.lvalue)]
-
-                incstate1 = add_simple_state_to_sdfg(
-                    self, sdfg,
-                    "_state" + str(node.location_line) + "_" + str(self.tasklet_count))
-                self.tasklet_count = self.tasklet_count + 1
-
-                incstate2 = sdfg.add_state("_state" + str(node.location_line) + "_" + str(self.tasklet_count))
-                self.tasklet_count = self.tasklet_count + 1
-                self.last_sdfg_states[sdfg] = incstate2
-
-                inc = {mapped_start_name: mapped_start_name + node.rvalue.op + int_val}
-                sdfg.add_edge(incstate1, incstate2,
-                            dace.InterstateEdge(assignments=inc))
-                return
+        # arrays = self.get_arrays_in_context(sdfg)
+        # mapped_name = self.name_mapping[sdfg].get(get_var_name(node.lvalue))
+        # if mapped_name in arrays and isinstance(arrays[mapped_name], dace.data.Array) and isinstance(node.rvalue, BinOp):
+        #     self_references = [n for n in walk(node.rvalue) if n == node.lvalue]
+        #     intlit_expr = [n for n in walk(node.rvalue) if isinstance(n, IntLiteral)]
+        #     if len(self_references) == 1 and len(intlit_expr) == 1:
+        #         pass
 
         outputnodefinder = FindOutputNodesVisitor()
         outputnodefinder.visit(node)

@@ -1,3 +1,5 @@
+#include <stdlib.h>
+
 int main(int argc, char** argv) {
 
 	double size = 3;
@@ -10,7 +12,7 @@ int main(int argc, char** argv) {
 	}
 
 	for (int i = 0; i < size; i++) {
-		arr[0] = data;
+		arr[i] = data;
 		data++;
 	}
 

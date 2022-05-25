@@ -8,4 +8,4 @@ clean:
 	rm -Rf tmp/* .dacecache _dacegraphs
 
 compile:
-	gcc .dacecache/_merged/src/cpu/_merged.cpp -I ~/.local/lib/python3.10/site-packages/dace/runtime/include
+	gcc .dacecache/_pointer_arith_3/src/cpu/_pointer_arith_3.cpp -I ~/.local/lib/python3.10/site-packages/dace/runtime/include -lm -lstdc++
