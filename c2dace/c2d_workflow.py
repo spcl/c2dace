@@ -132,6 +132,7 @@ def c2d_workflow(_dir,
         MoveReturnValueToArguments,
         CompoundToBinary,
         ArrayPointerExtractor,
+        ArrayPointerReset,
         UnaryReferenceAndPointerRemover,
         IndicesExtractor,
         InitExtractor,
@@ -139,6 +140,12 @@ def c2d_workflow(_dir,
     ]
 
     debug = True
+    global_array_map = dict()
+
+    transformation_args = {
+        ArrayPointerExtractor: [global_array_map],
+        ArrayPointerReset: [global_array_map],
+    }
 
     for transformation in transformations:
         if debug:
@@ -148,7 +155,8 @@ def c2d_workflow(_dir,
                 with open("tmp/middle.pseudo.cpp", "w") as f:
                     f.write(get_pseudocode(changed_ast))
             #PrinterVisitor().visit(changed_ast) 
-        changed_ast = transformation().visit(changed_ast)
+        args = transformation_args.get(transformation, [])
+        changed_ast = transformation(*args).visit(changed_ast)
 
     type_validator = ValidateNodeTypes()
     changed_ast = type_validator.visit(changed_ast)
@@ -229,6 +237,7 @@ def c2d_workflow(_dir,
     propagate_memlets_sdfg(globalsdfg)
 
     for sd in globalsdfg.all_sdfgs_recursive():
+        #promoted = scal2sym.promote_scalars_to_symbols(sd, ignore=set(['c2d_retval']))
         promoted = scal2sym.promote_scalars_to_symbols(sd)
         print(sd.label, 'promoting', promoted)
     globalsdfg.save("tmp/" + filecore + "-nomap.sdfg")

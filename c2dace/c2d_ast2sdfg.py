@@ -515,11 +515,7 @@ def find_new_array_name(arrays, name: str):
     return "dace_" + name + ('_%d' % index)
 
 
-def generate_memlet(op, top_sdfg, state):
-    start_name = state.arr_start_name_mapping.get(op.name)
-    if not start_name:
-        start_name = "0"
-
+def generate_memlet(op, top_sdfg, state, offset='0'):
     if state.name_mapping.get(top_sdfg).get(op.name) is not None:
         shape = top_sdfg.arrays[state.name_mapping[top_sdfg][op.name]].shape
     elif state.name_mapping.get(state.globalsdfg).get(op.name) is not None:
@@ -557,7 +553,7 @@ def generate_memlet(op, top_sdfg, state):
         else:
             if first:
                 if i != 1:
-                    memlet = start_name + ':' + str(i)
+                    memlet = offset + ':' + str(i)
                 else:
                     memlet = '0'
                 first = False
@@ -1605,13 +1601,32 @@ class AST2SDFG:
         input_names = []
         input_names_tasklet = []
 
+        previous_array = None
+        array_subsets = dict()
+        array_subsets_vars = []
+
         for i in input_vars:
             mapped_name = self.get_name_mapping_in_context(sdfg).get(i.name)
             arrays = self.get_arrays_in_context(sdfg)
 
-            if mapped_name in arrays and mapped_name not in input_names:
-                input_names.append(mapped_name)
-                input_names_tasklet.append(i.name)
+            if mapped_name not in arrays:
+                continue
+
+            if previous_array is not None and i.name.startswith("tmp_array_ptr"):
+                array_subsets[previous_array] = mapped_name
+                array_subsets_vars.append(i.name)
+                previous_array = None
+
+            arr = arrays.get(mapped_name)
+            if len(arr.shape) > 1 or arr.shape[0] != 1:
+                previous_array = mapped_name            
+
+            # do not add duplicates
+            if mapped_name in input_names:
+                continue
+
+            input_names.append(mapped_name)
+            input_names_tasklet.append(i.name)
 
         substate = add_simple_state_to_sdfg(
             self, sdfg,
@@ -1628,7 +1643,8 @@ class AST2SDFG:
 
         for i, j in zip(input_names, input_names_tasklet):
 
-            memlet_range = self.get_memlet_range(sdfg, input_vars, i, j)
+            offset = array_subsets.get(i, "0")
+            memlet_range = self.get_memlet_range(sdfg, input_vars, i, j, offset)
             add_memlet_read(substate, i, tasklet, j, memlet_range)
 
         for i, j, k in zip(output_names, output_names_tasklet,
@@ -1640,6 +1656,15 @@ class AST2SDFG:
         tw = TaskletWriter(output_names_tasklet, output_names_changed)
         # print("BINOP:",output_names,output_names_tasklet,output_names_changed)
         text = tw.write_tasklet_code(node) + ";"
+        
+        # remove offset that was already applied
+        oldtext = text
+        for i in array_subsets_vars:
+            text = text.replace("+"+i, "")
+
+        if len(array_subsets_vars) > 0:
+            print("applied offset transformation ", oldtext, " => ", text)
+
         # print("BINOPTASKLET:",text)
         tasklet.code = CodeBlock(text, dace.Language.CPP)
 
@@ -1740,7 +1765,7 @@ class AST2SDFG:
         self.all_array_names.append(self.name_mapping[sdfg][node.name])
 
     def get_memlet_range(self, sdfg: SDFG, variables: List[Node],
-                         var_name: str, var_name_tasklet: str) -> str:
+                         var_name: str, var_name_tasklet: str, offset='0') -> str:
         var = self.get_arrays_in_context(sdfg).get(var_name)
 
         if len(var.shape) == 0:
@@ -1751,7 +1776,7 @@ class AST2SDFG:
 
         for o_v in variables:
             if o_v.name == var_name_tasklet:
-                return generate_memlet(o_v, sdfg, self)
+                return generate_memlet(o_v, sdfg, self, offset)
 
     def get_arrays_in_context(self, sdfg: SDFG):
         a = self.globalsdfg.arrays.copy()
