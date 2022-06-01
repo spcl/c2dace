@@ -237,8 +237,8 @@ def c2d_workflow(_dir,
     propagate_memlets_sdfg(globalsdfg)
 
     for sd in globalsdfg.all_sdfgs_recursive():
-        #promoted = scal2sym.promote_scalars_to_symbols(sd, ignore=set(['c2d_retval']))
-        promoted = scal2sym.promote_scalars_to_symbols(sd)
+        promoted = scal2sym.promote_scalars_to_symbols(sd, ignore=set(['c2d_retval']))
+        #promoted = scal2sym.promote_scalars_to_symbols(sd)
         print(sd.label, 'promoting', promoted)
     globalsdfg.save("tmp/" + filecore + "-nomap.sdfg")
     xform_types = [

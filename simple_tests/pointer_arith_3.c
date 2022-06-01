@@ -18,3 +18,8 @@ int main(int argc, char** argv) {
 
 	return arr[1][1];
 }
+
+// data = {1, 2, 3}
+// arr[0] = {1, 2, 3}
+// arr[1] = {2, 3}
+// arr[2] = {3}

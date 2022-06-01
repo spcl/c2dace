@@ -1,5 +1,5 @@
 #FILE := HPCCG_preprocessed/merged.c
-FILE := simple_tests/pointer_arith_3.c
+FILE := simple_tests/matrix_init_2.c
 
 run:
 	python3 c2dace/c2d.py -f $(FILE)
