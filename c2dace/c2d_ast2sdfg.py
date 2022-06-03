@@ -61,15 +61,14 @@ def raise_exception(error_message):
 
 
 def get_var_name(node):
-    tmp = node
-    if isinstance(tmp, ArraySubscriptExpr):
-        tmp = tmp.unprocessed_name
+    if isinstance(node, ArraySubscriptExpr):
+        return get_var_name(node.unprocessed_name)
 
-    while isinstance(tmp, ParenExpr):
-        tmp = tmp.expr
+    if isinstance(node, ParenExpr):
+        return get_var_name(node.expr)
 
-    if isinstance(tmp, DeclRefExpr):
-        return tmp.name
+    if isinstance(node, DeclRefExpr):
+        return node.name
     else:
         print("WARNING cannot find name of ", node)
 
@@ -1474,9 +1473,12 @@ class AST2SDFG:
                     raise ValueError("pointer sizes mismatch")
             
             # check if we have a double pointer
-            #if isinstance(oldnode.type.pointee_type, Pointer) and isinstance(oldnode.type.pointee_type.pointee_type, Pointer):
-            if isinstance(oldnode.type.pointee_type, Pointer):
-                sizes.append(0)
+            if "STRUCT" in varname:
+                if isinstance(oldnode.type.pointee_type, Pointer) and isinstance(oldnode.type.pointee_type.pointee_type, Pointer):
+                    sizes.append(0)
+            else:
+                if isinstance(oldnode.type.pointee_type, Pointer):
+                    sizes.append(0)
             #print(datatype.__class__.__name__)
             #print(oldnode.name, sizes, datatype)
             print("mallocing ", oldnode.name, " of size ", sizes, " and type ", datatype)
@@ -1531,7 +1533,9 @@ class AST2SDFG:
         self.tasklet_count = self.tasklet_count + 1
 
         for arr, arr_ptr in array_subsets.items():
-            view_name = arr + "_view"
+            view_name = find_new_array_name(self.all_array_names, arr + "_view")
+            self.all_array_names.append(view_name)
+
             src = substate.add_read(arr)
             view = substate.add_access(view_name)
             arr_obj = self.get_arrays_in_context(sdfg).get(arr)
@@ -1587,49 +1591,6 @@ class AST2SDFG:
             print("ERROR HERE")
         self.tasklet_count += 1
 
-        outputnodefinder = FindOutputNodesVisitor()
-        outputnodefinder.visit(node)
-        output_vars = outputnodefinder.nodes
-        output_names = []
-        output_names_tasklet = []
-
-        sub_shape = None
-
-        for i in output_vars:
-            arrays = self.get_arrays_in_context(sdfg)
-
-            if self.incomplete_arrays.get((sdfg, i.name)) is not None:
-                rval = node.rvalue
-                rval_name = get_var_name(rval)
-                
-                rval_mapped = self.get_name_mapping_in_context(sdfg).get(rval_name)
-                if rval_mapped not in arrays:
-                    # no need to handle this (i think) because we don't have double pointers
-                    print("Assigning to incomplete array ", i.name , " with rval ", rval, " ", rval_mapped)
-                    continue
-
-                self.name_mapping[sdfg][i.name] = rval_mapped
-
-                if isinstance(rval, ArraySubscriptExpr):
-                    # a = b[k] so we have to map it correctly
-                    rval_array = arrays.get(rval_mapped)
-
-                    if len(rval_array.shape) > 1:
-                        # array
-                        sub_shape = list(rval_array.shape[1:])
-                    else:
-                        # simple scalar
-                        sub_shape = [1]
-
-                    # TODO use subshape to set the right shape on assignment
-
-
-            mapped_name = self.get_name_mapping_in_context(sdfg).get(i.name)
-
-            if mapped_name in arrays and mapped_name not in output_names:
-                output_names.append(mapped_name)
-                output_names_tasklet.append(i.name)
-
         inputnodefinder = FindInputNodesVisitor()
         inputnodefinder.visit(node)
         input_vars = inputnodefinder.nodes
@@ -1665,10 +1626,57 @@ class AST2SDFG:
             input_names.append(mapped_name)
             input_names_tasklet.append(i.name)
 
-        if len(array_subsets_vars) > 0:
-            print("using views for array assignment: ", output_names)
-            self.arrayassign2sdfg(node, sdfg, output_names, output_names_tasklet, output_vars, input_vars, array_subsets, array_subsets_vars, reverse_mapping)
-            return
+
+        outputnodefinder = FindOutputNodesVisitor()
+        outputnodefinder.visit(node)
+        output_vars = outputnodefinder.nodes
+        output_names = []
+        output_names_tasklet = []
+
+        for i in output_vars:
+            arrays = self.get_arrays_in_context(sdfg)
+
+            if self.incomplete_arrays.get((sdfg, i.name)) is not None:
+                rval = node.rvalue
+                rval_name = get_var_name(rval)
+                
+                rval_mapped = self.get_name_mapping_in_context(sdfg).get(rval_name)
+                if rval_mapped not in arrays:
+                    # no need to handle this (i think) because we don't have double pointers
+                    print("Assigning to incomplete array ", i.name , " with rval ", rval, " ", rval_mapped)
+                    continue
+
+                view_substate = add_simple_state_to_sdfg(
+                    self, sdfg,
+                    "_state" + str(node.location_line) + "_" + str(self.tasklet_count))
+                self.tasklet_count = self.tasklet_count + 1
+
+                rval_arr = arrays[rval_mapped]
+                src = view_substate.add_read(rval_mapped)
+
+                lval_mapped = find_new_array_name(self.all_array_names, i.name)
+
+
+                view_name = find_new_array_name(self.all_array_names, lval_mapped + "_view")
+                self.name_mapping[sdfg][i.name] = view_name
+                self.all_array_names.append(view_name)
+                
+                view = view_substate.add_access(view_name)
+
+                total_size = rval_arr.shape[0]
+                subset = "0:" + str(total_size)
+
+                view_memlet = dace.Memlet(data=rval_mapped, subset=subset, other_subset=subset)
+
+                sdfg.add_view(view_name, [view_memlet.volume], rval_arr.dtype)
+                view_substate.add_edge(src, None, view, 'views', view_memlet)
+
+            mapped_name = self.get_name_mapping_in_context(sdfg).get(i.name)
+
+            # TODO consider also views
+            if mapped_name in arrays and mapped_name not in output_names:
+                output_names.append(mapped_name)
+                output_names_tasklet.append(i.name)
 
         substate = add_simple_state_to_sdfg(
             self, sdfg,

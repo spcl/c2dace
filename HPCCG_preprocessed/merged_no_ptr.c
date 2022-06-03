@@ -16,9 +16,6 @@ struct HPC_Sparse_Matrix_STRUCT {
   int  * nnz_in_row;
   double ** ptr_to_vals_in_row;
   int ** ptr_to_inds_in_row;
-
-  double *list_of_vals;   //needed for cleaning up memory
-  int *list_of_inds;      //needed for cleaning up memory
 };
 
 
@@ -150,7 +147,8 @@ int main(int argc, char *argv[])
 
   double local_nrow = nx*ny*nz; // This is the size of our subblock
 
-  double local_nnz = 27*local_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
+  double max_nnz = 27;
+  double local_nnz = max_nnz*local_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
 
   double total_nrow = local_nrow*size; // Total number of grid points in mesh
   long long total_nnz = 27* (long long) total_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
@@ -162,19 +160,10 @@ int main(int argc, char *argv[])
   A->nnz_in_row = malloc(local_nrow * sizeof(int));
   A->ptr_to_vals_in_row = malloc(local_nrow * sizeof(double*));
   A->ptr_to_inds_in_row = malloc(local_nrow * sizeof(int*));
-  (A->ptr_to_vals_in_row)[0] = malloc(local_nnz * sizeof(double));
-  (A->ptr_to_inds_in_row)[0] = malloc(local_nnz * sizeof(int));
 
   double *x = malloc(local_nrow * sizeof(double));
   double *b = malloc(local_nrow * sizeof(double));
   double *xexact = malloc(local_nrow * sizeof(double));
-
-  // Allocate arrays that are of length local_nnz
-  A->list_of_vals = malloc(local_nnz * sizeof(double));
-  A->list_of_inds = malloc(local_nnz * sizeof(int));
-
-  double * curvalptr = A->list_of_vals;
-  int * curindptr = A->list_of_inds;
 
   long long nnzglobal = 0;
   for (int iz=0; iz<nz; iz++) {
@@ -183,8 +172,9 @@ int main(int argc, char *argv[])
         int curlocalrow = iz*nx*ny+iy*nx+ix;
         int currow = start_row+iz*nx*ny+iy*nx+ix;
         int nnzrow = 0;
-        (A->ptr_to_vals_in_row)[curlocalrow] = curvalptr;
-        (A->ptr_to_inds_in_row)[curlocalrow] = curindptr;
+        int curvalptr = 0;
+        (A->ptr_to_vals_in_row)[curlocalrow] = malloc(max_nnz * sizeof(double));
+        (A->ptr_to_inds_in_row)[curlocalrow] = malloc(max_nnz * sizeof(int));
         for (int sz=-1; sz<=1; sz++) {
           for (int sy=-1; sy<=1; sy++) {
             for (int sx=-1; sx<=1; sx++) {
@@ -195,14 +185,12 @@ int main(int argc, char *argv[])
               if (((((ix+sx>=0) && (ix+sx<nx)) && (iy+sy>=0)) && (iy+sy<ny)) && (curcol>=0 && curcol<total_nrow)) {
                 if (!use_7pt_stencil || (sz*sz+sy*sy+sx*sx<=1)) { // This logic will skip over point that are not part of a 7-pt stencil
                   if (curcol==currow) {
-                    curvalptr[0] = 27.0;
-                    curvalptr++;
+                    (A->ptr_to_vals_in_row)[curlocalrow][curvalptr] = 27;
                   } else {
-                    curvalptr[0] = -1.0;
-                    curvalptr++;
+                    (A->ptr_to_vals_in_row)[curlocalrow][curvalptr] = -1;
                   }
-                  curindptr[0] = curcol;
-                  curindptr++;
+                  (A->ptr_to_inds_in_row)[curlocalrow][curvalptr] = curcol;
+                  curvalptr++;
                   nnzrow++;
                 } 
               }

@@ -24,14 +24,36 @@ struct HPC_Sparse_Matrix_STRUCT {
 
 typedef struct HPC_Sparse_Matrix_STRUCT HPC_Sparse_Matrix;
 
-int main(int argc, char *argv[])
+int rand_lim(int limit) {
+/* return a random number between 0 and limit inclusive.
+ */
+
+    int divisor = RAND_MAX/(limit+1);
+    int retval;
+
+    do { 
+        retval = rand() / divisor;
+    } while (retval > limit);
+
+    return retval;
+}
+
+int run()
 {
 
   HPC_Sparse_Matrix* A = malloc(sizeof(HPC_Sparse_Matrix)); // Allocate matrix struct and fill it
+  double norm, d;
+  int ierr = 0;
+  int ione = 1;
 
-  int nx = 13;
-  int ny = 42;
-  int nz = 23;
+  //int nx = 13;
+  //int ny = 42;
+  //int nz = 23;
+
+  int nx =rand_lim(100) + 1;
+  int ny = rand_lim(100) + 1;
+  int nz = rand_lim(100) + 1;
+  printf("nx = %d, ny = %d, nz = %d\n", nx, ny, nz);
 
   int debug = 1;
 
@@ -40,13 +62,13 @@ int main(int argc, char *argv[])
 
   (A)->title = 0;
 
+
   // Set this bool to true if you want a 7-pt stencil instead of a 27 pt stencil
   int use_7pt_stencil = 0;
 
   double local_nrow = nx*ny*nz; // This is the size of our subblock
 
-  double max_nnz = 27;
-  double local_nnz = max_nnz*local_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
+  double local_nnz = 27*local_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
 
   double total_nrow = local_nrow*size; // Total number of grid points in mesh
   long long total_nnz = 27* (long long) total_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
@@ -59,9 +81,12 @@ int main(int argc, char *argv[])
   A->ptr_to_vals_in_row = malloc(local_nrow * sizeof(double*));
   A->ptr_to_inds_in_row = malloc(local_nrow * sizeof(int*));
 
-  double *x = malloc(local_nrow * sizeof(double));
-  double *b = malloc(local_nrow * sizeof(double));
-  double *xexact = malloc(local_nrow * sizeof(double));
+  // Allocate arrays that are of length local_nnz
+  A->list_of_vals = malloc(local_nnz * sizeof(double));
+  A->list_of_inds = malloc(local_nnz * sizeof(int));
+
+  double * curvalptr = A->list_of_vals;
+  int * curindptr = A->list_of_inds;
 
   long long nnzglobal = 0;
   for (int iz=0; iz<nz; iz++) {
@@ -70,9 +95,8 @@ int main(int argc, char *argv[])
         int curlocalrow = iz*nx*ny+iy*nx+ix;
         int currow = start_row+iz*nx*ny+iy*nx+ix;
         int nnzrow = 0;
-        int curvalptr = 0;
-        (A->ptr_to_vals_in_row)[curlocalrow] = malloc(max_nnz * sizeof(double));
-        (A->ptr_to_inds_in_row)[curlocalrow] = malloc(max_nnz * sizeof(int));
+        (A->ptr_to_vals_in_row)[curlocalrow] = curvalptr;
+        (A->ptr_to_inds_in_row)[curlocalrow] = curindptr;
         for (int sz=-1; sz<=1; sz++) {
           for (int sy=-1; sy<=1; sy++) {
             for (int sx=-1; sx<=1; sx++) {
@@ -83,12 +107,14 @@ int main(int argc, char *argv[])
               if (((((ix+sx>=0) && (ix+sx<nx)) && (iy+sy>=0)) && (iy+sy<ny)) && (curcol>=0 && curcol<total_nrow)) {
                 if (!use_7pt_stencil || (sz*sz+sy*sy+sx*sx<=1)) { // This logic will skip over point that are not part of a 7-pt stencil
                   if (curcol==currow) {
-                    (A->ptr_to_vals_in_row)[curlocalrow][curvalptr] = 27;
+                    curvalptr[0] = 27.0;
+                    curvalptr++;
                   } else {
-                    (A->ptr_to_vals_in_row)[curlocalrow][curvalptr] = -1;
+                    curvalptr[0] = -1.0;
+                    curvalptr++;
                   }
-                  (A->ptr_to_inds_in_row)[curlocalrow][curvalptr] = curcol;
-                  curvalptr++;
+                  curindptr[0] = curcol;
+                  curindptr++;
                   nnzrow++;
                 } 
               }
@@ -100,14 +126,32 @@ int main(int argc, char *argv[])
 
         if (nnzrow > 27) {
           printf("WARNING: Row %d has %d nonzeros\n", currow, nnzrow);
+          return 1;
         }
-
-        (x)[curlocalrow] = 0.0;
-        (b)[curlocalrow] = 27.0 - ((double) (nnzrow-1));
-        (xexact)[curlocalrow] = 1.0;
       } // end ix loop
      } // end iy loop
   } // end iz loop  
+  free(A->nnz_in_row);
+  free(A->ptr_to_vals_in_row);
+  free(A->ptr_to_inds_in_row);
+  free(A->list_of_vals);
+  free(A->list_of_inds);
 
-  return 0 ;
+  return 0;
 } 
+
+int main(int argc, char *argv[])
+{
+  srand(time(0));
+
+  int result = 0;
+  for (int i=0; i<1000; i++) {
+    result = run();
+    if (result != 0) {
+      printf("Error in run %d\n", i);
+      return 1;
+    }
+  }
+
+  return 0;
+}
