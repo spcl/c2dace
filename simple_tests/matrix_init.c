@@ -16,9 +16,6 @@ struct HPC_Sparse_Matrix_STRUCT {
   int  * nnz_in_row;
   double ** ptr_to_vals_in_row;
   int ** ptr_to_inds_in_row;
-
-  double *list_of_vals;   //needed for cleaning up memory
-  int *list_of_inds;      //needed for cleaning up memory
 };
 
 
@@ -49,7 +46,7 @@ int main(int argc, char *argv[])
   double local_nnz = max_nnz*local_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
 
   double total_nrow = local_nrow*size; // Total number of grid points in mesh
-  long long total_nnz = 27* (long long) total_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
+  long long total_nnz = max_nnz * (long long) total_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
 
   int start_row = local_nrow*rank; // Each processor gets a section of a chimney stack domain
   int stop_row = start_row+local_nrow-1;

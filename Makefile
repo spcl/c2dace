@@ -1,4 +1,4 @@
-#FILE := HPCCG_preprocessed/merged.c
+#FILE := HPCCG_preprocessed/merged_no_ptr.c
 FILE := simple_tests/matrix_init.c
 
 run:

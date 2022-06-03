@@ -1635,45 +1635,8 @@ class AST2SDFG:
 
         for i in output_vars:
             arrays = self.get_arrays_in_context(sdfg)
-
-            if self.incomplete_arrays.get((sdfg, i.name)) is not None:
-                rval = node.rvalue
-                rval_name = get_var_name(rval)
-                
-                rval_mapped = self.get_name_mapping_in_context(sdfg).get(rval_name)
-                if rval_mapped not in arrays:
-                    # no need to handle this (i think) because we don't have double pointers
-                    print("Assigning to incomplete array ", i.name , " with rval ", rval, " ", rval_mapped)
-                    continue
-
-                view_substate = add_simple_state_to_sdfg(
-                    self, sdfg,
-                    "_state" + str(node.location_line) + "_" + str(self.tasklet_count))
-                self.tasklet_count = self.tasklet_count + 1
-
-                rval_arr = arrays[rval_mapped]
-                src = view_substate.add_read(rval_mapped)
-
-                lval_mapped = find_new_array_name(self.all_array_names, i.name)
-
-
-                view_name = find_new_array_name(self.all_array_names, lval_mapped + "_view")
-                self.name_mapping[sdfg][i.name] = view_name
-                self.all_array_names.append(view_name)
-                
-                view = view_substate.add_access(view_name)
-
-                total_size = rval_arr.shape[0]
-                subset = "0:" + str(total_size)
-
-                view_memlet = dace.Memlet(data=rval_mapped, subset=subset, other_subset=subset)
-
-                sdfg.add_view(view_name, [view_memlet.volume], rval_arr.dtype)
-                view_substate.add_edge(src, None, view, 'views', view_memlet)
-
             mapped_name = self.get_name_mapping_in_context(sdfg).get(i.name)
 
-            # TODO consider also views
             if mapped_name in arrays and mapped_name not in output_names:
                 output_names.append(mapped_name)
                 output_names_tasklet.append(i.name)
@@ -1693,8 +1656,7 @@ class AST2SDFG:
 
         for i, j in zip(input_names, input_names_tasklet):
 
-            offset = array_subsets.get(i, "0")
-            memlet_range = self.get_memlet_range(sdfg, input_vars, i, j, offset)
+            memlet_range = self.get_memlet_range(sdfg, input_vars, i, j)
             add_memlet_read(substate, i, tasklet, j, memlet_range)
 
         for i, j, k in zip(output_names, output_names_tasklet,
