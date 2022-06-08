@@ -262,6 +262,7 @@ def c2d_workflow(_dir,
                 xfh.split_interstate_edges(sd)
             num = globalsdfg.apply_transformations_repeated(RefineNestedAccess)
             print("Refine nested acesses:", num)
+            globalsdfg.save("tmp/pre.sdfg")
             l2ms = globalsdfg.apply_transformations_repeated(LoopToMap, validate=False)
             transformed = l2ms > 0
 

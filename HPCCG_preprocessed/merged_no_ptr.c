@@ -184,11 +184,7 @@ int main(int argc, char *argv[])
               // is sufficient to check the z values
               if (((((ix+sx>=0) && (ix+sx<nx)) && (iy+sy>=0)) && (iy+sy<ny)) && (curcol>=0 && curcol<total_nrow)) {
                 if (!use_7pt_stencil || (sz*sz+sy*sy+sx*sx<=1)) { // This logic will skip over point that are not part of a 7-pt stencil
-                  if (curcol==currow) {
-                    (A->ptr_to_vals_in_row)[curlocalrow][curvalptr] = 27;
-                  } else {
-                    (A->ptr_to_vals_in_row)[curlocalrow][curvalptr] = -1;
-                  }
+                  (A->ptr_to_vals_in_row)[curlocalrow][curvalptr] = 27;
                   (A->ptr_to_inds_in_row)[curlocalrow][curvalptr] = curcol;
                   curvalptr++;
                   nnzrow++;
