@@ -126,16 +126,15 @@ void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double to
     ddot(nrow, p, Ap, alpha); // 2*nrow ops
     alpha[0] = rtrans[0]/alpha[0];
     waxpby(nrow, 1.0, x, alpha[0], p, x);// 2*nrow ops
-    double beta = -(alpha[0]);
-    waxpby(nrow, 1.0, r, beta, Ap, r);// 2*nrow ops
-    *niters = k;
+    waxpby(nrow, 1.0, r, -(alpha[0]), Ap, r);// 2*nrow ops
+    niters[0] = k;
 
     free(alpha);
   }
 
   double tmp = r[0] + Ap[0] + p[0];
 
-  *normr = norm;
+  normr[0] = norm;
 }
 
 int main(int argc, char *argv[])

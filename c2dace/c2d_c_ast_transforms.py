@@ -140,6 +140,43 @@ class IndicesExtractor(NodeTransformer):
             newbody.append(self.visit(child))
         return BasicBlock(body=newbody)
 
+class CompoundArgumentsExtractor(NodeTransformer):
+    def __init__(self):
+        self.count = 0
+
+    def compute_patch(self, node: CallExpr):
+        if node.name.name in ["malloc", "expf", "powf", "sqrt", "cbrt", "printf"]:
+            return []
+
+        inits = []
+        for i in range(len(node.args)):
+            if not isinstance(node.args[i], UnOp) and not isinstance(node.args[i], BinOp):
+                continue
+
+            var_name = "tmp_arg_" + str(self.count)
+            self.count += 1
+
+            var = DeclRefExpr(name=var_name, type=node.args[i].type)
+            init_var = DeclStmt(vardecl=[VarDecl(name=var_name, type=node.args[i].type, init=node.args[i])])
+
+            node.args[i] = var
+            inits.append(init_var)
+        
+        return inits
+
+    def visit_BasicBlock(self, node: BasicBlock):
+        newbody = []
+        for child in node.body:
+            self.visit(child)
+            if isinstance(child, CallExpr):
+                newbody += self.compute_patch(child)
+
+            if isinstance(child, BinOp) and isinstance(child.rvalue, CallExpr):
+                newbody += self.compute_patch(child.rvalue)
+
+            newbody.append(child)
+
+        return BasicBlock(body=newbody)
 class MallocForceInitializer(NodeTransformer):
     def __init__(self):
         self.mallocs = dict()
