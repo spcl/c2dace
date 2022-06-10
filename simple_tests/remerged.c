@@ -106,7 +106,7 @@ void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double to
 
   if (rank==0) printf("Initial Residual = %e\n", norm);
 
-  for(int k=1; k<max_iter && norm > tolerance; k++ ) {
+  for(int k=1; ((k<max_iter) && (norm > tolerance)); k++ ) {
     if (k == 1) {
       waxpby(nrow, 1.0, r, 0.0, r, p);
     } else {
@@ -132,6 +132,8 @@ void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double to
 
     free(alpha);
   }
+
+  double tmp = r[0] + Ap[0] + p[0];
 
   *normr = norm;
 }
@@ -185,7 +187,6 @@ int main(int argc, char *argv[])
 
   double *x = malloc(local_nrow * sizeof(double));
   double *b = malloc(local_nrow * sizeof(double));
-  double *xexact = malloc(local_nrow * sizeof(double));
 
   long long nnzglobal = 0;
   for (int iz=0; iz<nz; iz++) {
@@ -223,7 +224,6 @@ int main(int argc, char *argv[])
         nnzglobal += nnzrow;
         x[curlocalrow] = 0.0;
         b[curlocalrow] = 27.0 - ((double) (nnzrow-1));
-        xexact[curlocalrow] = 1.0;
       } // end ix loop
      } // end iy loop
   } // end iz loop  
@@ -242,7 +242,7 @@ int main(int argc, char *argv[])
   A->local_ncol = local_nrow;
   A->local_nnz = local_nnz;
 
-  int dump_matrix = 1;
+  int dump_matrix = 0;
   if (dump_matrix && size<=4) dump_matlab_matrix(A, rank);
 
   int* niters = malloc(sizeof(int));
@@ -252,7 +252,7 @@ int main(int argc, char *argv[])
   double tolerance = 0.0; // Set tolerance to zero to make all runs do max_iter iterations
   HPCCG( A, b, x, max_iter, tolerance, niters, normr);
 
-  double fniters = *niters; 
+  double fniters = niters[0]; 
   double fnrow = A->total_nrow;
   double fnnz = A->total_nnz;
   double fnops_ddot = fniters*4*fnrow;
@@ -260,9 +260,9 @@ int main(int argc, char *argv[])
   double fnops_sparsemv = fniters*2*fnnz;
   double fnops = fnops_ddot+fnops_waxpby+fnops_sparsemv;
 
-  printf("Dimensions: nx=%d, ny=%d, nz=%d\n",nx,ny,nz);
-  printf("Number of iterations: %d\n", *niters);
-  printf("Final residual: %e\n", *normr);
+  printf("Dimensions: x=%d, y=%d, z=%d\n",nx,ny,nz);
+  printf("Number of iterations: %d\n", niters[0]);
+  printf("Final residual: %e\n", normr[0]);
 
   printf("FLOPS Summary:\n");
   printf("Total   : %e\n",fnops);
@@ -273,7 +273,6 @@ int main(int argc, char *argv[])
   // keep memory until the end
   //printf("%d", b[0]);
   //printf("%d", x[0]);
-  printf("%d", xexact[0]);
   //printf("%f", (A->ptr_to_vals_in_row)[0][0]);
   //printf("%f", (A->ptr_to_inds_in_row)[0][0]);
   //printf("%d", (A->nnz_in_row)[0]);
