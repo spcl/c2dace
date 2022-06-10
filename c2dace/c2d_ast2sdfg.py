@@ -318,6 +318,7 @@ class TaskletWriter:
             Float: "float",
             Int: "int",
             Char: "char",
+            Long: "long",
             LongLong: "long long"
         }
         self.ast_elements = {
@@ -1504,8 +1505,14 @@ class AST2SDFG:
             # check if we are assigning to the elements of an array
             if isinstance(node.lvalue, ArraySubscriptExpr):
                 index = 1
+                if shape[1] != 0:
+                    print("WARNING: skipping allocation of ", mapped_name, " because already allocated")
+                    return
             else:
                 index = 0
+                if shape[0] != 1:
+                    print("WARNING: skipping allocation of ", mapped_name, " because already allocated")
+                    return
 
             if isinstance(rvalue, IntLiteral):
                 shape[0] = rvalue.value[0]

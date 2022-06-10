@@ -24,7 +24,6 @@ class UnaryExtractor(NodeTransformer):
         self.count = count
 
     def visit_ForStmt(self, node: ForStmt):
-        print("for stmt")
         return ForStmt(init=node.init,
                        body=self.generic_visit(node.body[0]),
                        cond=node.cond,
@@ -86,6 +85,18 @@ class IndicesExtractorNodeLister(NodeVisitor):
     def visit_BasicBlock(self, node: BasicBlock):
         return
 
+class ParenExprRemover(NodeTransformer):
+    def visit_ArraySubscriptExpr(self, node: ArraySubscriptExpr):
+        if isinstance(node.unprocessed_name, ArraySubscriptExpr):
+            node.unprocessed_name = self.visit(node.unprocessed_name)
+            return node
+            
+        tmp = node.unprocessed_name
+        while isinstance(tmp, ParenExpr):
+            tmp = tmp.expr
+
+        node.unprocessed_name = tmp
+        return node
 
 class IndicesExtractor(NodeTransformer):
     def __init__(self, count=0):
@@ -128,6 +139,62 @@ class IndicesExtractor(NodeTransformer):
                               rvalue=res[i].index))
             newbody.append(self.visit(child))
         return BasicBlock(body=newbody)
+
+class MallocForceInitializer(NodeTransformer):
+    def __init__(self):
+        self.mallocs = dict()
+        self.first_scan = True
+
+    def visit_BasicBlock(self, node: BasicBlock):
+        if self.first_scan:
+            for child in node.body:
+                self.visit(child)
+                if isinstance(child, BinOp) and isinstance(child.rvalue, CallExpr) and isinstance(child.rvalue.name, DeclRefExpr) and child.rvalue.name.name == "malloc":
+                    tmp = child.lvalue
+
+                    while isinstance(tmp, ParenExpr):
+                        tmp = tmp.expr
+
+                    while isinstance(tmp, ArraySubscriptExpr):
+                        tmp = tmp.unprocessed_name
+
+                    if not isinstance(tmp, DeclRefExpr):
+                        print("WARNING cannot identify ", tmp)
+
+                    self.mallocs[tmp.name] = child
+            
+            return node
+
+        else:
+            newbody = []
+            for child in node.body:
+                self.visit(child)
+                newbody.append(child)
+                if child in self.mallocs.values():
+                    newbody.append(
+                        BinOp(
+                                op="=",
+                                lvalue=ArraySubscriptExpr(
+                                    unprocessed_name=child.lvalue,
+                                    index=IntLiteral(value="0"),
+                                ),
+                                rvalue=IntLiteral(value="0")
+                            )
+                    )
+
+            node.body = newbody
+            return node
+    
+    def visit_FuncDecl(self, node: FuncDecl):
+        self.mallocs = dict()
+        self.first_scan = True
+
+        self.visit(node.body)
+
+        self.first_scan = False
+        self.visit(node.body)
+
+        return node
 
 class ArrayPointerExtractorNodeLister(NodeVisitor):
     def __init__(self):

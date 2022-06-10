@@ -25,7 +25,7 @@ void ddot (int n, double* x, double* y, double* result)
 {  
   double local_result = 0.0;
   for (int i=0; i<n; i++) {
-    local_result += x[i]*x[i];
+    local_result += x[i];
   }
 
   *result = local_result;
@@ -67,12 +67,15 @@ void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double to
   double nrow = A->local_nrow;
   double ncol = A->local_ncol;
 
+  int nrow_int = nrow;
+  int ncol_int = ncol;
+
   //double r[nrow];
   //double p[ncol]; // In parallel case, A is rectangular
   //double Ap[nrow];
-  double* r = malloc(nrow * sizeof(double));
-  double* p = malloc(ncol * sizeof(double)); // In parallel case, A is rectangular
-  double* Ap = malloc(nrow * sizeof(double));
+  double* r = malloc(nrow_int * sizeof(double));
+  double* p = malloc(ncol_int * sizeof(double)); // In parallel case, A is rectangular
+  double* Ap = malloc(nrow_int * sizeof(double));
 
   double norm = 0.0;
   double* rtrans = malloc(sizeof(double));
@@ -87,7 +90,6 @@ void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double to
 
   // p is of length ncols, copy x to p for sparse MV operation
   waxpby(nrow, 1.0, x, 0.0, x, p);
-  HPC_sparsemv(A, p, Ap);
   waxpby(nrow, 1.0, b, -1.0, Ap, r);
   ddot(nrow, r, r, rtrans);
   norm = sqrt(*rtrans);
@@ -95,20 +97,15 @@ void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double to
   if (rank==0) printf("Initial Residual = %e\n", norm);
 
   for(int k=1; (k<max_iter) && (norm > tolerance); k++ ) {
-    if (k == 1) {
-      waxpby(nrow, 1.0, r, 0.0, r, p);
-	  } else {
-      oldrtrans = (*rtrans);
-      ddot (nrow, r, r, rtrans);// 2*nrow ops
-      double beta = (*rtrans)/oldrtrans;
-      waxpby (nrow, 1.0, r, beta, p, p);// 2*nrow ops
-    }
+    oldrtrans = (*rtrans);
+    ddot (nrow, r, r, rtrans);// 2*nrow ops
+    double beta = (*rtrans)/oldrtrans;
+    waxpby (nrow, 1.0, r, beta, p, p);// 2*nrow ops
     norm = sqrt(*rtrans);
     if (rank==0 && (k%print_freq == 0 || k+1 == max_iter))
     printf("Iteration = %d, Residual = %e\n", k, norm);
     
 
-    HPC_sparsemv(A, p, Ap); // 2*nnz ops
     double* alpha = malloc(sizeof(double));
     (*alpha) = 0.0;
     ddot(nrow, p, Ap, alpha); // 2*nrow ops
@@ -116,7 +113,7 @@ void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double to
     waxpby(nrow, 1.0, x, (*alpha), p, x);// 2*nrow ops
     waxpby(nrow, 1.0, r, -(*alpha), Ap, r);// 2*nrow ops
     *niters = k;
-    }
+  }
 
   *normr = norm;
 }
@@ -144,7 +141,7 @@ int main(int argc, char *argv[])
   // Set this bool to true if you want a 7-pt stencil instead of a 27 pt stencil
   int use_7pt_stencil = 0;
 
-  double local_nrow = nx*ny*nz; // This is the size of our subblock
+  int local_nrow = nx*ny*nz; // This is the size of our subblock
 
   double max_nnz = 27;
   double local_nnz = max_nnz*local_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
@@ -172,8 +169,10 @@ int main(int argc, char *argv[])
         int currow = start_row+iz*nx*ny+iy*nx+ix;
         int nnzrow = 0;
         int curvalptr = 0;
-        (A->ptr_to_vals_in_row)[curlocalrow] = malloc(max_nnz * sizeof(double));
-        (A->ptr_to_inds_in_row)[curlocalrow] = malloc(max_nnz * sizeof(int));
+
+        int max_nnz_int = max_nnz;
+        (A->ptr_to_vals_in_row)[curlocalrow] = malloc(max_nnz_int * sizeof(double));
+        (A->ptr_to_inds_in_row)[curlocalrow] = malloc(max_nnz_int * sizeof(int));
         for (int sz=-1; sz<=1; sz++) {
           for (int sy=-1; sy<=1; sy++) {
             for (int sx=-1; sx<=1; sx++) {
@@ -192,6 +191,8 @@ int main(int argc, char *argv[])
             } // end sx loop
           } // end sy loop
         } // end sz loop
+        printf("%f", (A->ptr_to_vals_in_row)[0][0]);
+        printf("%f", (A->ptr_to_inds_in_row)[0][0]);
         (A->nnz_in_row)[curlocalrow] = nnzrow;
         nnzglobal += nnzrow;
 
@@ -203,7 +204,7 @@ int main(int argc, char *argv[])
         (b)[curlocalrow] = 27.0 - ((double) (nnzrow-1));
         (xexact)[curlocalrow] = 1.0;
       } // end ix loop
-     } // end iy loop
+    } // end iy loop
   } // end iz loop  
   if (debug) printf("Process %d of %d has %d",rank,size,local_nrow);
   
@@ -225,6 +226,7 @@ int main(int argc, char *argv[])
   int max_iter = 150;
   double tolerance = 0.0; // Set tolerance to zero to make all runs do max_iter iterations
   HPCCG(A, b, x, max_iter, tolerance, niters, normr);
+  //x[0] += 0;
 
   double fniters = *niters; 
   double fnrow = A->total_nrow;
@@ -257,5 +259,14 @@ int main(int argc, char *argv[])
 
 
   // Finish up
+
+  printf("%d", b[0]);
+  printf("%d", x[0]);
+  printf("%d", xexact[0]);
+  printf("%f", (A->ptr_to_vals_in_row)[0][0]);
+  printf("%f", (A->ptr_to_inds_in_row)[0][0]);
+  printf("%d", (A->nnz_in_row)[0]);
+  printf("%d", *niters);
+  printf("%f", *normr);
   return 0 ;
 } 
