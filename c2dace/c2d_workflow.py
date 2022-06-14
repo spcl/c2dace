@@ -120,6 +120,7 @@ def c2d_workflow(_dir,
 
     transformations = [
         PowerOptimization,
+        Calloc2Malloc,
         InsertMissingBasicBlocks,
         CXXClassToStruct,
         FlattenStructs,

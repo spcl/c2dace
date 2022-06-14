@@ -81,12 +81,12 @@ void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double to
   int nrow = A->local_nrow;
   int ncol = A->local_ncol;
 
-  double* r = malloc(nrow * sizeof(double));
-  double* p = malloc(ncol * sizeof(double));
-  double* Ap = malloc(nrow * sizeof(double));
+  double* r = calloc(nrow, sizeof(double));
+  double* p = calloc(ncol, sizeof(double));
+  double* Ap = calloc(nrow, sizeof(double));
 
   double norm = 0.0;
-  double* rtrans = malloc(sizeof(double));
+  double* rtrans = calloc(1, sizeof(double));
   rtrans[0] = 0;
 
   double oldrtrans = 0.0;
@@ -121,7 +121,7 @@ void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double to
     
 
     HPC_sparsemv(A, p, Ap); // 2*nnz ops
-    double* alpha = malloc(sizeof(double));
+    double* alpha = calloc(1, sizeof(double));
     alpha[0] = 0;
     ddot(nrow, p, Ap, alpha); // 2*nrow ops
     alpha[0] = rtrans[0]/alpha[0];
@@ -140,7 +140,7 @@ void HPCCG (HPC_Sparse_Matrix * A, double* b, double* x, int max_iter, double to
 int main(int argc, char *argv[])
 {
 
-  HPC_Sparse_Matrix *A = malloc(sizeof(HPC_Sparse_Matrix));
+  HPC_Sparse_Matrix *A = calloc(1, sizeof(HPC_Sparse_Matrix));
   double norm;
   double d;
   int ierr = 0;
@@ -173,19 +173,19 @@ int main(int argc, char *argv[])
   
 
   // Allocate arrays that are of length local_nrow
-  A->nnz_in_row = malloc(local_nrow * sizeof(int));
-  A->ptr_to_vals_in_row = malloc(local_nrow * sizeof(double*));
-  A->ptr_to_inds_in_row = malloc(local_nrow * sizeof(int*));
+  A->nnz_in_row = calloc(local_nrow, sizeof(int));
+  A->ptr_to_vals_in_row = calloc(local_nrow, sizeof(double*));
+  A->ptr_to_inds_in_row = calloc(local_nrow, sizeof(int*));
 
   int max_nnz_int = max_nnz;
-  A->ptr_to_vals_in_row[0] = malloc(max_nnz_int * sizeof(double));
-  A->ptr_to_inds_in_row[0] = malloc(max_nnz_int * sizeof(int));
+  A->ptr_to_vals_in_row[0] = calloc(max_nnz_int, sizeof(double));
+  A->ptr_to_inds_in_row[0] = calloc(max_nnz_int, sizeof(int));
 
   A->ptr_to_vals_in_row[0][0] = 0;
   A->ptr_to_inds_in_row[0][0] = 0;
 
-  double *x = malloc(local_nrow * sizeof(double));
-  double *b = malloc(local_nrow * sizeof(double));
+  double *x = calloc(local_nrow, sizeof(double));
+  double *b = calloc(local_nrow, sizeof(double));
 
   long long nnzglobal = 0;
   for (int iz=0; iz<nz; iz++) {
@@ -197,8 +197,8 @@ int main(int argc, char *argv[])
         int curvalptr = 0;
 
         max_nnz_int = max_nnz;
-        A->ptr_to_vals_in_row[curlocalrow] = malloc(max_nnz_int * sizeof(double));
-        A->ptr_to_inds_in_row[curlocalrow] = malloc(max_nnz_int * sizeof(int));
+        A->ptr_to_vals_in_row[curlocalrow] = calloc(max_nnz_int, sizeof(double));
+        A->ptr_to_inds_in_row[curlocalrow] = calloc(max_nnz_int, sizeof(int));
         for (int sz=-1; sz<=1; sz++) {
           for (int sy=-1; sy<=1; sy++) {
             for (int sx=-1; sx<=1; sx++) {
@@ -244,8 +244,8 @@ int main(int argc, char *argv[])
   int dump_matrix = 0;
   if (dump_matrix && size<=4) dump_matlab_matrix(A, rank);
 
-  int* niters = malloc(sizeof(int));
-  double* normr = malloc(sizeof(double));
+  int* niters = calloc(1, sizeof(int));
+  double* normr = calloc(1, sizeof(double));
 
   int max_iter = 150;
   double tolerance = 0.0; // Set tolerance to zero to make all runs do max_iter iterations

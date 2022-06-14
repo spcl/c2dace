@@ -1,6 +1,6 @@
 #FILE := HPCCG_preprocessed/merged_no_ptr.c
 FILENAME := remerged
-FILE := simple_tests/$(FILENAME).c
+FILE := HPCCG_preprocessed/$(FILENAME).c
 
 run:
 	python3 c2dace/c2d.py -f $(FILE)
