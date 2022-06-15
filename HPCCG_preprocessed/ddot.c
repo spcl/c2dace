@@ -54,8 +54,7 @@
 
 #include "ddot.h"
 
-int ddot (const int n, const double * const x, const double * const y, 
-	  double * const result)
+void ddot (int n, double* x, double* y, double* result)
 {  
   double local_result = 0.0;
   if (y==x)

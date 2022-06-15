@@ -55,28 +55,17 @@
 #include <stdio.h>
 #include "dump_matlab_matrix.h"
 
-int dump_matlab_matrix( HPC_Sparse_Matrix *A, int rank) {
-  const int nrow = A->local_nrow;
+void dump_matlab_matrix( HPC_Sparse_Matrix *A, int rank) {
+  int nrow = A->local_nrow;
   int start_row = nrow*rank; // Each processor gets a section of a chimney stack domain
 
-  FILE * handle = 0;
-  if (rank==0) 
-    handle = fopen("mat0.dat", "w");
-  else if (rank==1)
-    handle = fopen("mat1.dat", "w");
-  else if (rank==2)
-    handle = fopen("mat2.dat", "w");
-  else if (rank==3)
-    handle = fopen("mat3.dat", "w");
-  else return(0);
-
+  printf("===== MATRIX DUMP ======\n");
   for (int i=0; i< nrow; i++) {
-      const double * const cur_vals = A->ptr_to_vals_in_row[i];
-      const int    * const cur_inds = A->ptr_to_inds_in_row[i];
-      const int cur_nnz = A->nnz_in_row[i];
-      for (int j=0; j< cur_nnz; j++) fprintf(handle, " %d %d %22.16e\n",start_row+i+1,cur_inds[j]+1,cur_vals[j]);
+    int cur_nnz = A->nnz_in_row[i];
+    for (int j=0; j< cur_nnz; j++) {
+      printf(" %d %d %22.16e,",start_row+i+1,A->ptr_to_inds_in_row[i][j]+1,A->ptr_to_vals_in_row[i][j]);
     }
-
-  fclose(handle);
-  return(0);
+    printf("\n");
+  }
+  printf("===== END DUMP ======\n");
 }

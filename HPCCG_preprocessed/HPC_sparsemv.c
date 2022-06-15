@@ -56,26 +56,19 @@
 #include <math.h>
 #include "HPC_sparsemv.h"
 
-int HPC_sparsemv( HPC_Sparse_Matrix *A, 
-		 const double * const x, double * const y)
+void HPC_sparsemv( HPC_Sparse_Matrix *A, double* x, double* y)
 {
+  int nrow = A->local_nrow;
 
-  const int nrow = (const int) A->local_nrow;
+  for (int i=0; i< nrow; i++) {
+    double sum = 0.0;
 
-  for (int i=0; i< nrow; i++)
-    {
-      double sum = 0.0;
-      const double * const cur_vals = 
-     (const double * const) A->ptr_to_vals_in_row[i];
+    int cur_nnz = A->nnz_in_row[i];
 
-      const int    * const cur_inds = 
-     (const int    * const) A->ptr_to_inds_in_row[i];
-
-      const int cur_nnz = (const int) A->nnz_in_row[i];
-
-      for (int j=0; j< cur_nnz; j++)
-          sum += cur_vals[j]*x[cur_inds[j]];
-      y[i] = sum;
+    for (int j=0; j< cur_nnz; j++) {
+      sum += A->ptr_to_vals_in_row[i][j]*x[A->ptr_to_inds_in_row[i][j]];
     }
-  return(0);
+
+    y[i] = sum;
+  }
 }

@@ -44,6 +44,5 @@
 #define HPC_SPARSEMV_H
 #include "HPC_Sparse_Matrix.h"
 
-int HPC_sparsemv( HPC_Sparse_Matrix *A, 
-		 const double * const x, double * const y);
+void HPC_sparsemv( HPC_Sparse_Matrix *A, double* x, double* y);
 #endif

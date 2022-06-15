@@ -47,9 +47,9 @@
 #include "waxpby.h"
 #include "HPC_Sparse_Matrix.h"
 
-int HPCCG(HPC_Sparse_Matrix * A,
-	  const double * const b, double * const x,
-	  const int max_iter, const double tolerance, int* niters, double* normr);
+void HPCCG(HPC_Sparse_Matrix * A,
+	  double* b, double* x,
+	  int max_iter, double tolerance, int* niters, double* normr);
 
 // this function will compute the Conjugate Gradient...
 // A <=> Matrix

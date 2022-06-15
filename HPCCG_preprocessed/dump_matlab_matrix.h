@@ -44,5 +44,5 @@
 #define DUMP_MATLAB_MATRIX_H
 #include "HPC_Sparse_Matrix.h"
 
-int dump_matlab_matrix( HPC_Sparse_Matrix *A, int rank);
+void dump_matlab_matrix( HPC_Sparse_Matrix *A, int rank);
 #endif
