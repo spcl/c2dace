@@ -47,7 +47,6 @@ int main(int argc, char *argv[])
   (A->ptr_to_vals_in_row)[curlocalrow] = curvalptr;
   (A->ptr_to_inds_in_row)[curlocalrow] = curindptr;
   curvalptr[0] = 27.0;
-  curvalptr++;
 
   return 0 ;
 } 

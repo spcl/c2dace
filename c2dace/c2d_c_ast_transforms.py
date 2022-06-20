@@ -183,7 +183,7 @@ class Calloc2Malloc(NodeTransformer):
     def visit_CallExpr(self, node: CallExpr):
         if node.name.name == "calloc":
             node.name = DeclRefExpr(name="malloc")
-            node.args[0] = BinOp(op="*", lvalue=node.args[0], rvalue=node.args[1])
+            node.args[0] = BinOp(op="*", lvalue=copy.deepcopy(node.args[0]), rvalue=copy.deepcopy(node.args[1]))
             del node.args[1]
 
         return node

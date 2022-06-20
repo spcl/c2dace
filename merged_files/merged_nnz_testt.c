@@ -38,7 +38,7 @@ int rand_lim(int limit) {
     return retval;
 }
 
-int run()
+int run(double* means)
 {
 
   HPC_Sparse_Matrix* A = malloc(sizeof(HPC_Sparse_Matrix)); // Allocate matrix struct and fill it
@@ -137,6 +137,8 @@ int run()
   free(A->list_of_vals);
   free(A->list_of_inds);
 
+  *means += nnzglobal/local_nrow;
+
   return 0;
 } 
 
@@ -144,14 +146,19 @@ int main(int argc, char *argv[])
 {
   srand(time(0));
 
+  int runs = 100;
+  double means = 0;
+
   int result = 0;
-  for (int i=0; i<1000; i++) {
-    result = run();
+  for (int i=0; i<runs; i++) {
+    result = run(&means);
     if (result != 0) {
       printf("Error in run %d\n", i);
       return 1;
     }
   }
+
+  printf("nnz mean %f\n", means/runs);
 
   return 0;
 }
