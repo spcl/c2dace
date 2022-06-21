@@ -1,5 +1,5 @@
 #FILE := HPCCG_preprocessed/merged_no_ptr.c
-FILENAME := remerged
+FILENAME := and_condition
 #FILE := HPCCG_preprocessed/$(FILENAME).c
 FILE := merged_files/$(FILENAME).c
 
