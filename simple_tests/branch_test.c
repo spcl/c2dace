@@ -14,5 +14,6 @@ int main(int argc, char *argv[])
     p[0] = 32;
   }
 
+  printf("%f\n", 0);
   return 0;
 } 

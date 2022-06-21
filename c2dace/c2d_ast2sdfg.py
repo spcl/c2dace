@@ -1474,7 +1474,7 @@ class AST2SDFG:
                     raise ValueError("pointer sizes mismatch")
             
             # check if we have a double pointer
-            if "STRUCT" in varname:
+            if "c2d_struct" in varname:
                 if isinstance(oldnode.type.pointee_type, Pointer) and isinstance(oldnode.type.pointee_type.pointee_type, Pointer):
                     sizes.append(0)
             else:
@@ -1644,10 +1644,26 @@ class AST2SDFG:
             arrays = self.get_arrays_in_context(sdfg)
             mapped_name = self.get_name_mapping_in_context(sdfg).get(i.name)
 
+            if self.incomplete_arrays.get((sdfg, i.name)) is not None:
+                rval = node.rvalue
+                rval_name = get_var_name(rval)
+                
+                rval_mapped = self.get_name_mapping_in_context(sdfg).get(rval_name)
+                if rval_mapped not in arrays:
+                    # no need to handle this (i think) because we don't have double pointers
+                    print("Assigning to incomplete array ", i.name , " with rval ", rval, " ", rval_mapped)
+                    continue
+
+                print("mapping ", i.name, " to ", rval_mapped)
+                self.name_mapping[sdfg][i.name] = rval_mapped
+
+                # no need to create a tasklet because we do a mapping at compile time
+                return
+
             if mapped_name in arrays and mapped_name not in output_names:
                 output_names.append(mapped_name)
                 output_names_tasklet.append(i.name)
-
+        
         substate = add_simple_state_to_sdfg(
             self, sdfg,
             "_state" + str(node.location_line) + "_" + str(self.tasklet_count))

@@ -16,7 +16,10 @@ int main(int argc, char** argv) {
 
 	fillStruct(ex);
 
-	return 0;
+	double out = ex->end + loc_ex.start;
+
+	printf("%f\n", out);
+	return out;
 }
 
 void fillStruct(example* ex) {

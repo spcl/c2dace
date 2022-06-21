@@ -3,7 +3,7 @@ import unittest, os, sys, subprocess
 from parameterized import parameterized
 
 FOLDER = './simple_tests/'
-DACE_INCLUDE = "~/.local/lib/python3.9/site-packages/dace/runtime/include"
+DACE_INCLUDE = "~/.local/lib/python3.10/site-packages/dace/runtime/include"
 
 def execute_command(command, shell=False):
     process = subprocess.run(command,
@@ -42,7 +42,7 @@ for f in files:
 
     code, output = execute_command(["./a.out"])
 
-    tests.append([f[:-2], code])
+    tests.append([f[:-2], output])
 
 print("Loaded tests: ", tests)
 
@@ -69,7 +69,7 @@ class Testing(unittest.TestCase):
 
         code, output = execute_command(["./a.out"])
         self.assertEqual(
-            code, expected,
+            output, expected,
             Formatting.format_string(
                 "expected different return code of " + file + " failed",
                 Formatting.RED) + "\n" + output)

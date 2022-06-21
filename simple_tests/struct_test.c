@@ -17,5 +17,8 @@ int main(int argc, char** argv) {
 	(*ex)->end = 3;
 	(*ex)->value = 12*0.23;
 
-	return 0;
+	double result = (*ex)->start + (*ex)->end;
+
+	printf("%f\n", result);
+	return result;
 }

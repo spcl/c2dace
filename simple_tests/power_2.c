@@ -29,5 +29,6 @@ int main(int argc, char** argv) {
 
 	printf("%f\n", result);
 
+	printf("%f\n", 0);
 	return 0;
 }

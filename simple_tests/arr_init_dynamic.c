@@ -1,10 +1,11 @@
 int main(int argc, char** argv) {
 
-	double arr_size = 3;
-	double* value = malloc(sizeof(double) * arr_size);
+	int arr_size = 3;
+	double* value = malloc(arr_size * sizeof(double));
 
 	setI(value);
 
+	printf("%f\n", value[0] + value[2]);
 	return value[0] + value[2];
 }
 

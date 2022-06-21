@@ -14,6 +14,7 @@ int main(int argc, char** argv) {
 
 	fillStruct(ex);
 
+	printf("%f\n", (ex->start)[1]);
 	return (ex->start)[1];
 }
 

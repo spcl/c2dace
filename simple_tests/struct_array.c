@@ -13,12 +13,13 @@ int main(int argc, char** argv) {
 
 	fillStruct(ex);
 
-	double result[3];
+	double* result = malloc(3 * sizeof(double));
 
 	for (int i=0; i<3; i++) {
 		result[i] = ex->data[i];
 	}
 
+	printf("%f\n", result[0] + result[2]);
 	return result[0] + result[2];
 }
 

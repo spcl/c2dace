@@ -4,6 +4,7 @@ int main(int argc, char** argv) {
 
 	sum(list, list);
 
+	printf("%f\n", list[0] + list[1]);
 	return list[0] + list[1];
 }
 

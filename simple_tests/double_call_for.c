@@ -6,7 +6,8 @@ int main(int argc, char** argv) {
 
 	setI(value);
 
-	return addition + (*value);
+	printf("%f\n", addition + value[0]);
+	return addition + value[0];
 }
 
 void setI(double* k) {
@@ -17,5 +18,5 @@ void setI(double* k) {
 }
 
 void setK(double* w) {
-	(*w) = 3.0;
+	w[0] = 3.0;
 }

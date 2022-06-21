@@ -136,11 +136,11 @@ def c2d_workflow(_dir,
         #ArrayPointerExtractor,
         #ArrayPointerReset,
         #UnaryReferenceAndPointerRemover,
-        IndicesExtractor,
         InitExtractor,
+        MallocForceInitializer,
+        IndicesExtractor,
         ForDeclarer,
         ParenExprRemover,
-        MallocForceInitializer,
     ]
 
     debug = True
@@ -155,7 +155,7 @@ def c2d_workflow(_dir,
         if debug:
             print("="*10)
             print(transformation)
-            if transformation == Calloc2Malloc:
+            if transformation == IndicesExtractor:
                 with open("tmp/middle.pseudo.cpp", "w") as f:
                     f.write(get_pseudocode(changed_ast))
             #PrinterVisitor().visit(changed_ast) 

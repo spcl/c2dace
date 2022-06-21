@@ -17,6 +17,7 @@ int main(int argc, char** argv) {
 
 	double result = (*ex)->start + 4.0;
 
+	printf("%f\n", result);
 	return result;
 }
 

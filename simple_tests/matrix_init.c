@@ -40,7 +40,7 @@ int main(int argc, char *argv[])
   // Set this bool to true if you want a 7-pt stencil instead of a 27 pt stencil
   int use_7pt_stencil = 0;
 
-  double local_nrow = nx*ny*nz; // This is the size of our subblock
+  int local_nrow = nx*ny*nz; // This is the size of our subblock
 
   double max_nnz = 27;
   double local_nnz = max_nnz*local_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
@@ -61,18 +61,20 @@ int main(int argc, char *argv[])
   double *xexact = malloc(local_nrow * sizeof(double));
 
   long long nnzglobal = 0;
-  for (int iz=0; iz<nz; iz++) {
-    for (int iy=0; iy<ny; iy++) {
-      for (int ix=0; ix<nx; ix++) {
+  for (int iz=0; (iz<nz); iz++) {
+    for (int iy=0; (iy<ny); iy++) {
+      for (int ix=0; (ix<nx); ix++) {
         int curlocalrow = iz*nx*ny+iy*nx+ix;
         int currow = start_row+iz*nx*ny+iy*nx+ix;
         int nnzrow = 0;
         int curvalptr = 0;
-        (A->ptr_to_vals_in_row)[curlocalrow] = malloc(max_nnz * sizeof(double));
-        (A->ptr_to_inds_in_row)[curlocalrow] = malloc(max_nnz * sizeof(int));
-        for (int sz=-1; sz<=1; sz++) {
-          for (int sy=-1; sy<=1; sy++) {
-            for (int sx=-1; sx<=1; sx++) {
+
+        int max_nnz_int = max_nnz;
+        (A->ptr_to_vals_in_row)[curlocalrow] = malloc(max_nnz_int * sizeof(double));
+        (A->ptr_to_inds_in_row)[curlocalrow] = malloc(max_nnz_int * sizeof(int));
+        for (int sz=-1; (sz<=1); sz++) {
+          for (int sy=-1; (sy<=1); sy++) {
+            for (int sx=-1; (sx<=1); sx++) {
               int curcol = currow+sz*nx*ny+sy*nx+sx;
               // Since we have a stack of nx by ny by nz domains , stacking in the z direction, we check to see
               // if sx and sy are reaching outside of the domain, while the check for the curcol being valid
@@ -88,6 +90,8 @@ int main(int argc, char *argv[])
             } // end sx loop
           } // end sy loop
         } // end sz loop
+        double tmp = A->ptr_to_vals_in_row[0][0];
+        double tmp_int = A->ptr_to_inds_in_row[0][0];
         (A->nnz_in_row)[curlocalrow] = nnzrow;
         nnzglobal += nnzrow;
 
@@ -102,5 +106,13 @@ int main(int argc, char *argv[])
      } // end iy loop
   } // end iz loop  
 
+  printf("%f", A->ptr_to_vals_in_row[0][0]);
+  printf("%f", A->ptr_to_inds_in_row[0][0]);
+  printf("%f", A->nnz_in_row[0]);
+  printf("%f", x[0]);
+  printf("%f", b[0]);
+  printf("%f", xexact[0]);
+
+  printf("%f\n", 0 );
   return 0 ;
 } 

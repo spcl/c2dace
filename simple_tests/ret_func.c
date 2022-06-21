@@ -9,5 +9,6 @@ int main(int argc, char** argv) {
 
 	value = setI(value);
 
+	printf("%f\n", value);
 	return value;
 }

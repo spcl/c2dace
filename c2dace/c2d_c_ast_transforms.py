@@ -200,11 +200,11 @@ class MallocForceInitializer(NodeTransformer):
                 if isinstance(child, BinOp) and isinstance(child.rvalue, CallExpr) and isinstance(child.rvalue.name, DeclRefExpr) and child.rvalue.name.name == "malloc":
                     tmp = child.lvalue
 
-                    while isinstance(tmp, ParenExpr):
-                        tmp = tmp.expr
-
-                    while isinstance(tmp, ArraySubscriptExpr):
-                        tmp = tmp.unprocessed_name
+                    while isinstance(tmp, ParenExpr) or isinstance(tmp, ArraySubscriptExpr):
+                        if isinstance(tmp, ParenExpr):
+                            tmp = tmp.expr
+                        elif isinstance(tmp, ArraySubscriptExpr):
+                            tmp = tmp.unprocessed_name
 
                     if not isinstance(tmp, DeclRefExpr):
                         print("WARNING cannot identify ", tmp)
@@ -223,6 +223,9 @@ class MallocForceInitializer(NodeTransformer):
                         BinOp(
                                 op="=",
                                 lvalue=ArraySubscriptExpr(
+                                    name="",
+                                    indices="UNDEF",
+                                    type=Double(),
                                     unprocessed_name=child.lvalue,
                                     index=IntLiteral(value="0"),
                                 ),
