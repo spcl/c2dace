@@ -1,3 +1,5 @@
+// supposed to fail because of DaCe code generation bug
+
 #include <stdio.h>
 #include <stddef.h>
 #include <math.h>

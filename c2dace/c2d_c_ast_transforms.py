@@ -1045,7 +1045,14 @@ class ReplaceStructDeclStatements(NodeTransformer):
             replacement = copy.deepcopy(container_expr)
             replacement.unprocessed_name = self.replace_container_expr(
                 container_expr.unprocessed_name, desired_field)
-            replacement.type = replacement.unprocessed_name.type.element_type
+            if isinstance(replacement.unprocessed_name.type, Array):
+                replacement.type = replacement.unprocessed_name.type.element_type
+            elif isinstance(replacement.unprocessed_name.type, Pointer):
+                replacement.type = replacement.unprocessed_name.type.pointee_type
+            else:
+                print("unsupported type in array subscript expr ", replacement.unprocessed_name.type)
+                raise
+
             return replacement
         if isinstance(container_expr, MemberRefExpr):
             replacement = copy.deepcopy(container_expr)
@@ -1149,6 +1156,9 @@ class ReplaceStructDeclStatements(NodeTransformer):
         # only valid and defined structs
         splits = self.split_struct_type(node.type, node.name)
         if splits is None:
+            return self.generic_visit(node)
+
+        if not hasattr(node, "init"):
             return self.generic_visit(node)
 
         # null initialization to pointer

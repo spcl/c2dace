@@ -31,6 +31,10 @@ class Formatting:
             return Formatting.format_string(str(b), Formatting.GREEN)
         return Formatting.format_string(str(b), Formatting.RED)
 
+if not os.path.exists(os.path.expanduser(DACE_INCLUDE)):
+    print(DACE_INCLUDE + " file not found. Please modify the path.")
+    sys.exit(1)
+
 files = [f for f in os.listdir(FOLDER) if f.endswith('.c')]
 tests = []
 for f in files:

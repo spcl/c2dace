@@ -97,7 +97,7 @@ def main():
     if args.test is not None:
         defaultTestLoader.testNamePatterns = ["*" + args.test]
 
-    test_suite = defaultTestLoader.discover("tests/", pattern="*.py")
+    test_suite = defaultTestLoader.discover("simple_tests/", pattern="*.py")
     runner = TextTestRunner(verbosity=2)
     runner.run(test_suite)
 
