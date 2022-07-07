@@ -643,7 +643,7 @@ class AST2SDFG:
             self.ast_elements[node.__class__](node, sdfg)
         else:
             print("WARNING:", node.__class__.__name__)
-            # raise TypeError("Unsupported ast node type - will be implemented")
+            raise TypeError("Unsupported ast node type - will be implemented")
 
     def tu2sdfg(self, node: AST, sdfg: SDFG):
         for i in node.typedefs:
@@ -1103,17 +1103,19 @@ class AST2SDFG:
 
         body_start_state = sdfg.add_state("BodyWhileStartState" + str(line))
         self.last_sdfg_states[sdfg] = body_start_state
+        self.translate(node.body[0], sdfg)
+
         final_substate = sdfg.add_state("MergeState" + str(line))
+
         self.last_loop_break[sdfg] = final_substate
         self.last_loop_continue[sdfg] = guard_substate
-        self.translate(node.body[0], sdfg)
         body_end_state = add_simple_state_to_sdfg(
             self, sdfg, "BodyWhileEndState" + str(line))
 
+
+
         #body_state = make_nested_sdfg_with_no_context_change(
         #    sdfg, new_sdfg, name, used_vars, self)
-
-        self.translate(node.body[0], new_sdfg)
 
         sdfg.add_edge(guard_substate, body_start_state,
                       dace.InterstateEdge(condition))
@@ -1386,6 +1388,8 @@ class AST2SDFG:
                     self.get_dace_type(rettype))
                 # special_list_in.append(retval.name)
                 special_list_out.append(retval.name + "_out")
+                tw.outputs.append(retval.name)
+                tw.outputs_changes.append(retval.name + "_out")
                 text = tw.write_tasklet_code(
                     BinOp(lvalue=retval, op="=", rvalue=node)) + ";"
 
@@ -1689,8 +1693,8 @@ class AST2SDFG:
             add_memlet_write(substate, i, tasklet, k, memlet_range)
 
         tw = TaskletWriter(output_names_tasklet, output_names_changed)
-        # print("BINOP:",output_names,output_names_tasklet,output_names_changed)
         text = tw.write_tasklet_code(node) + ";"
+        #print("BINOP:",output_names_tasklet,output_names_changed, " > ",text)
         
         # remove offset that was already applied
         oldtext = text

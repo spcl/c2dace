@@ -1174,7 +1174,7 @@ class ReplaceStructDeclStatements(NodeTransformer):
 
         mallocCall =CallExpr(
                 type=Pointer(pointee_type=Void()),
-                args=[IntLiteral(value="1")],
+                args=node.init.args,
                 name=DeclRefExpr(name="malloc", type=Pointer(pointee_type=Void()))
             )
 

@@ -155,7 +155,7 @@ def c2d_workflow(_dir,
         if debug:
             print("="*10)
             print(transformation)
-            if transformation == IndicesExtractor:
+            if transformation == FlattenStructs:
                 with open("tmp/middle.pseudo.cpp", "w") as f:
                     f.write(get_pseudocode(changed_ast))
             #PrinterVisitor().visit(changed_ast) 
@@ -218,7 +218,7 @@ def c2d_workflow(_dir,
     from dace.transformation.dataflow import MergeSourceSinkArrays, PruneConnectors, AugAssignToWCR, MapCollapse, TrivialMapElimination, GPUTransformMap, GPUTransformLocalStorage
     from dace.sdfg.utils import fuse_states
     from dace.transformation import helpers as xfh
-    from dace.sdfg.analysis import scalar_to_symbol as scal2sym
+    from dace.transformation.passes import scalar_to_symbol as scal2sym
     import time
 
     for node, parent in globalsdfg.all_nodes_recursive():
@@ -232,6 +232,7 @@ def c2d_workflow(_dir,
 
     for sd in globalsdfg.all_sdfgs_recursive():
         promoted = scal2sym.promote_scalars_to_symbols(sd)
+
     globalsdfg.save("tmp/" + filecore + "-promoted-notfused.sdfg")
     for codeobj in globalsdfg.generate_code():
         if codeobj.title == 'Frame':
@@ -275,68 +276,6 @@ def c2d_workflow(_dir,
             print("Refine nested acesses:", num)
             globalsdfg.save("tmp/pre.sdfg")
             l2ms = globalsdfg.apply_transformations_repeated(LoopToMap, validate=False)
-            transformed = l2ms > 0
-
-        globalsdfg.apply_transformations_repeated(LoopToMap, validate=False)
-
-        if xforms == 0:
-            break
-    for sd in globalsdfg.all_sdfgs_recursive():
-        sd.apply_transformations_repeated(StateAssignElimination,
-                                          validate=False)
-
-    globalsdfg.save("tmp/" + filecore + "-perf.sdfg")
-    from dace.transformation.auto import auto_optimize as aopt
-    aopt.move_small_arrays_to_stack(globalsdfg)
-    aopt.make_transients_persistent(globalsdfg, dace.DeviceType.CPU)
-    for sdfg in globalsdfg.all_sdfgs_recursive():
-        sdfg.openmp_sections = False
-    globalsdfg.save("tmp/" + filecore + "-opt.sdfg")
-    for codeobj in globalsdfg.generate_code():
-        if codeobj.title == 'Frame':
-            with open("tmp/" + filecore + '-dace.cc', 'w') as fp:
-                fp.write(codeobj.clean_code)
-
-    globalsdfg.compile()
-
-def shortcut(filecore):
-    from dace import propagate_memlets_sdfg
-    from dace.transformation.interstate import StateFusion, StateAssignElimination, InlineSDFG, LoopToMap, InlineTransients, HoistState, RefineNestedAccess
-    from dace.transformation.dataflow import MergeSourceSinkArrays, PruneConnectors, AugAssignToWCR, MapCollapse, TrivialMapElimination, GPUTransformMap, GPUTransformLocalStorage
-    from dace.sdfg.utils import fuse_states
-    from dace.transformation import helpers as xfh
-    from dace.sdfg.analysis import scalar_to_symbol as scal2sym
-    import time
-
-    globalsdfg = SDFG("_" + filecore).from_file("tmp/" + filecore + "-promoted-notfused.sdfg")
-    globalsdfg.simplify()
-    globalsdfg.apply_transformations_repeated(PruneConnectors)
-    xfh.split_interstate_edges(globalsdfg)
-    propagate_memlets_sdfg(globalsdfg)
-
-    for sd in globalsdfg.all_sdfgs_recursive():
-        promoted = scal2sym.promote_scalars_to_symbols(sd)
-        print(sd.label, 'promoting', promoted)
-    globalsdfg.save("tmp/" + filecore + "-nomap.sdfg")
-    xform_types = [
-        TrivialMapElimination, HoistState, InlineTransients, AugAssignToWCR
-    ]
-    for i in range(4):
-        propagate_memlets_sdfg(globalsdfg)
-        globalsdfg.simplify()
-        xforms = globalsdfg.apply_transformations_repeated(xform_types,
-                                                           validate_all=True)
-
-        # Strict transformations and loop parallelization
-        transformed = True
-        while transformed:
-            globalsdfg.apply_transformations_repeated(xform_types)
-            for sd in globalsdfg.all_sdfgs_recursive():
-                xfh.split_interstate_edges(sd)
-            num = globalsdfg.apply_transformations_repeated(RefineNestedAccess)
-            print("Refine nested acesses:", num)
-            l2ms = globalsdfg.apply_transformations_repeated(LoopToMap,
-                                                             validate=False)
             transformed = l2ms > 0
 
         globalsdfg.apply_transformations_repeated(LoopToMap, validate=False)
