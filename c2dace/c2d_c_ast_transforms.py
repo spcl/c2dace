@@ -444,6 +444,165 @@ class ArrayPointerReset(NodeTransformer):
 
         return node
 
+class LILSimplifier(NodeTransformer):
+    def __init__(self):
+        self.matched = dict()
+        self.ptr_names = dict()
+        self.applied_transform = dict()
+        self.apply_transformation = False
+
+    def BasicBlock_visit_only(self, node: BasicBlock):
+        previous_match = -1
+        previous_child = None
+        previous_varname = None
+        previous_arr = None
+
+        for i, child in enumerate(node.body):
+            self.visit(child)
+            if not isinstance(child, BinOp):
+                continue
+
+            rval = child.rvalue
+            while isinstance(rval, ParenExpr):
+                rval = rval.expr
+
+            if not isinstance(rval, DeclRefExpr) or not isinstance(rval.type, Pointer):
+                continue
+
+            lval = child.lvalue
+            while isinstance(lval, ParenExpr):
+                lval = lval.expr
+
+            if not isinstance(lval, ArraySubscriptExpr) or not isinstance(lval.type, Pointer):
+                continue
+
+            arr_node = lval.unprocessed_name
+
+            while isinstance(arr_node, ParenExpr):
+                arr_node = arr_node.expr
+
+            if not isinstance(arr_node, DeclRefExpr) or not arr_node.name.startswith("c2d_struct"):
+                continue
+
+            struct_str_position = arr_node.name.find("___")
+            if previous_match == i-1 and arr_node.name[:struct_str_position] == previous_arr_name[:struct_str_position]:
+                self.ptr_names[previous_varname] = child.lineno
+                self.ptr_names[rval.name] = child.lineno
+                self.matched[child.lineno] = (
+                    node,
+                    child,
+                    previous_child,
+                    {
+                        rval.name: lval,
+                        previous_varname: previous_arr,
+                    },
+                )
+                self.applied_transform[child.lineno] = False
+
+            previous_match = i
+            previous_child = child
+            previous_varname = rval.name
+            previous_arr_name = arr_node.name
+            previous_arr = lval
+        
+        return node
+
+    def BasicBlock_transform(self, node: BasicBlock):
+        new_body = []
+        for child in node.body:
+            self.visit(child)
+
+            if isinstance(child, DeclStmt):
+                found = False
+                for i in child.vardecl:
+                    if isinstance(i.type, Pointer) and i.name in self.ptr_names:
+                        print("throwing ", i.name)
+                        found = True
+                        break
+
+                if found:
+                    continue
+
+            if not isinstance(child, BinOp):
+                new_body.append(child)
+                continue
+
+            if isinstance(child.lvalue, UnOp) and isinstance(child.lvalue.lvalue, DeclRefExpr) and child.lvalue.lvalue.name in self.ptr_names:
+                lineno = self.ptr_names[child.lvalue.lvalue.name]
+                if not self.applied_transform[lineno]:
+                    print("WARNING applying transformation for LIL sparse matrix. If your code doesn't have a LIL sparse matrix this is wrong.")
+                    print("Init at line ", lineno)
+                self.applied_transform[lineno] = True
+
+                print("Set value at ", child.lineno)
+
+                (_, _, _, array_mapping) = self.matched[lineno]
+                cur_name = list(array_mapping.keys())[0] + "_offset"
+                arr = array_mapping[child.lvalue.lvalue.name]
+                binop = BinOp(
+                    op=child.op,
+                    lvalue=ArraySubscriptExpr(
+                        name="",
+                        indices="UNDEF",
+                        unprocessed_name=copy.deepcopy(arr),
+                        index=DeclRefExpr(name=cur_name, type=Int()),
+                        type=arr.type.pointee_type
+                    ),
+                    rvalue=child.rvalue
+                )
+                new_body.append(binop)
+
+                if cur_name == child.lvalue.lvalue.name + "_offset":
+                    increment = UnOp(
+                        op=child.lvalue.op,
+                        postfix=True,
+                        lvalue=DeclRefExpr(name=cur_name, type=Int()),
+                    )
+
+                    new_body.append(increment)
+
+            else:
+                new_body.append(child)
+
+        node.body = new_body
+
+        return node
+
+    def visit_BasicBlock(self, node: BasicBlock):
+        if not self.apply_transformation:
+            return self.BasicBlock_visit_only(node)
+        else:
+            return self.BasicBlock_transform(node)
+
+    def visit_AST(self, node: AST):
+        self.generic_visit(node)
+        self.apply_transformation = True
+        print(self.ptr_names)
+        print(self.matched)
+        self.generic_visit(node)
+
+        for lineno, applied in self.applied_transform.items():
+            if not applied:
+                continue
+
+            (body, child1, child2, arr_names) = self.matched[lineno]
+            child1.rvalue = CallExpr(name=DeclRefExpr(name="malloc"), args=[IntLiteral(value="1")])
+            child2.rvalue = CallExpr(name=DeclRefExpr(name="malloc"), args=[IntLiteral(value="1")])
+
+            new_body = []
+            for child in body.body:
+                if child != child2:
+                    new_body.append(child)
+                    continue
+
+                offset_name = list(arr_names.keys())[0] + "_offset"
+                new_body.append(VarDecl(name=offset_name, type=Int(), init=IntLiteral(value="0")))
+                new_body.append(child)
+            
+            body.body = new_body
+
+        return node
+
 class InitExtractorNodeLister(NodeVisitor):
     def __init__(self):
         self.nodes: List[VarDecl] = []
@@ -978,7 +1137,7 @@ class ReplaceStructDeclStatements(NodeTransformer):
 
     def get_field_replacement_name(self, struct_type_name: str,
                                    struct_variable_name: str, field_name: str):
-        return "c2d_struct_" + struct_type_name + "_" + struct_variable_name + "_" + field_name
+        return "c2d_struct_" + struct_type_name + "_" + struct_variable_name + "___" + field_name
 
     def split_struct_type(self, struct_like_type,
                           var_name) -> Dict[str, Tuple[str, Type]]:

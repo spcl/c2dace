@@ -63,14 +63,14 @@ void HPC_sparsemv( HPC_Sparse_Matrix *A, double* x, double* y)
 }
 
 void dump_matlab_matrix(HPC_Sparse_Matrix *A, int rank) {
-  int nrow = A->local_nrow;
-  int start_row = nrow*rank; // Each processor gets a section of a chimney stack domain
+  double nrow = A->local_nrow;
+  double start_row = nrow*rank; // Each processor gets a section of a chimney stack domain
 
   printf("===== MATRIX DUMP ======\n");
   for (int i=0; i< nrow; i++) {
     int cur_nnz = A->nnz_in_row[i];
     for (int j=0; j< cur_nnz; j++) {
-      printf(" %d %d %22.16e,",start_row+i+1,A->ptr_to_inds_in_row[i][j]+1,A->ptr_to_vals_in_row[i][j]);
+      printf(" %f %d %22.16e,",start_row+i+1,A->ptr_to_inds_in_row[i][j]+1,A->ptr_to_vals_in_row[i][j]);
     }
     printf("\n");
   }
@@ -151,9 +151,9 @@ int main(int argc, char *argv[])
   int size = 1; // Serial case (not using MPI)
   int rank = 0; 
 
-  int nx = 13;
-  int ny = 42;
-  int nz = 23;
+  int nx = 89;
+  int ny = 96;
+  int nz = 101;
 
   A->title = 0;
 
@@ -168,8 +168,8 @@ int main(int argc, char *argv[])
   int total_nrow = local_nrow*size; // Total number of grid points in mesh
   long long total_nnz = max_nnz* (long long) total_nrow; // Approximately 27 nonzeros per row (except for boundary nodes)
 
-  int start_row = local_nrow*rank; // Each processor gets a section of a chimney stack domain
-  int stop_row = start_row+local_nrow-1;
+  double start_row = local_nrow*rank; // Each processor gets a section of a chimney stack domain
+  double stop_row = start_row+local_nrow-1;
   
 
   // Allocate arrays that are of length local_nrow
@@ -270,6 +270,8 @@ int main(int argc, char *argv[])
   printf("SPARSEMV: %e\n",fnops_sparsemv);
 
   // keep memory until the end
+  //printf("%f", start_row);
+  //printf("%f", stop_row);
   //printf("%d", b[0]);
   //printf("%d", x[0]);
   //printf("%f", (A->ptr_to_vals_in_row)[0][0]);

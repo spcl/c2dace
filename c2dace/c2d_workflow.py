@@ -126,6 +126,7 @@ def c2d_workflow(_dir,
         FlattenStructs,
         ReplaceStructDeclStatements,
         UnaryReferenceAndPointerRemover,
+        LILSimplifier,
         CondExtractor,
         UnaryExtractor,
         UnaryToBinary,
@@ -155,9 +156,11 @@ def c2d_workflow(_dir,
         if debug:
             print("="*10)
             print(transformation)
-            if transformation == FlattenStructs:
+            if transformation == CondExtractor:
                 with open("tmp/middle.pseudo.cpp", "w") as f:
                     f.write(get_pseudocode(changed_ast))
+                with open("tmp/middle.txt", "w") as f:
+                    f.write(dump(changed_ast, include_attributes=True))
             #PrinterVisitor().visit(changed_ast) 
         args = transformation_args.get(transformation, [])
         changed_ast = transformation(*args).visit(changed_ast)
@@ -234,13 +237,13 @@ def c2d_workflow(_dir,
         promoted = scal2sym.promote_scalars_to_symbols(sd)
 
     globalsdfg.save("tmp/" + filecore + "-promoted-notfused.sdfg")
+
     for codeobj in globalsdfg.generate_code():
         if codeobj.title == 'Frame':
             with open("tmp/middle_code.cc", 'w') as fp:
                 fp.write(codeobj.clean_code)
 
     globalsdfg.compile()
-    return
 
     globalsdfg.simplify()
     globalsdfg.save("tmp/" + filecore + "-simplified.sdfg")
