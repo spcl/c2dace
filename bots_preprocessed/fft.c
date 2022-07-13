@@ -178,7 +178,6 @@ void fft_while(double n_orig, COMPLEX * in, COMPLEX * out, int *factors, COMPLEX
 	double m = n / r;
 	int n_int = n_orig;
 	double* offsets = malloc(n_int * sizeof(int));
-	double* offsets_copy = malloc(n_int * sizeof(int));
 	double* offsets_count = malloc(n_int * sizeof(int));
 	double last_offset = 0;
 	int last_offset_int = last_offset;
@@ -198,14 +197,9 @@ void fft_while(double n_orig, COMPLEX * in, COMPLEX * out, int *factors, COMPLEX
 		}
 
 		double max_offset = last_offset;
-		for (int i = 0; i <= last_offset; i++) {
-			offsets_copy[i] = offsets[i];
-		}
-
-		last_offset = -1;
 		for (int i = 0; i <= max_offset; i++) {
-			double cur_offset = offsets_copy[i];
-			double x = 0;
+			double cur_offset = offsets[i];
+			double x = m;
 			for (int tmp_3 = 0; x < n; tmp_3++) {
 				last_offset += 1;
 				last_offset_int = last_offset;
@@ -224,6 +218,8 @@ void fft_while(double n_orig, COMPLEX * in, COMPLEX * out, int *factors, COMPLEX
 	}
 
 	while (factor_count >= 0) {
+		factor_count_int = factor_count; 
+		last_offset = offsets_count[factor_count_int] - 1;
 		for (int x = 0; x <= last_offset; x++) {
 			if (invert) {
 				fft_twiddle_gen(0, m, out, in, W, nW, nW / n, r, m, offsets[x]);
@@ -234,43 +230,18 @@ void fft_while(double n_orig, COMPLEX * in, COMPLEX * out, int *factors, COMPLEX
 
 		m = n;
 		factor_count -= 1;
-		if (factor_count < 0) {
-			factor_count_int = 0; 
-		} else {
-			factor_count_int = factor_count; 
+		factor_count_int = factor_count; 
+		if (factor_count_int < 0) {
+			factor_count_int = 0;
 		}
 		r = factors[factor_count_int];
 		n = m*r;
 		invert = !invert;
-
-		double max_offset = last_offset;
-		for (int i = 0; i <= last_offset; i++) {
-			offsets_copy[i] = offsets[i];
-		}
-
-		max_offset = offsets_count[factor_count_int];
-		last_offset = 0;
-		double offset_counter = -1;
-		int offset_counter_int = offset_counter;
-		for (int i = 0; i < max_offset; i++) {
-			offset_counter += 1;
-			last_offset_int = last_offset;
-			offset_counter_int = offset_counter;
-			offsets[offset_counter_int] = offsets_copy[last_offset_int];
-			double o = 0;
-			for (int tmp_9 = 0; o < n; tmp_9++) {;
-				last_offset += 1;
-				o += m;
-			}
-		}
-
-		last_offset = offset_counter;
 	}
 
-	tmp = offsets[0] + offsets_copy[0] + offsets_count[0];
+	tmp = offsets[0] + offsets_count[0];
 
 	free(offsets);
-	free(offsets_copy);
 	free(offsets_count);
 }
 

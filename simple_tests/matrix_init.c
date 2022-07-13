@@ -106,8 +106,6 @@ int main(int argc, char *argv[])
      } // end iy loop
   } // end iz loop  
 
-  printf("%f", A->ptr_to_vals_in_row[0][0]);
-  printf("%f", A->ptr_to_inds_in_row[0][0]);
   printf("%f", A->nnz_in_row[0]);
   printf("%f", x[0]);
   printf("%f", b[0]);

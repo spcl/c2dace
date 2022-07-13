@@ -238,13 +238,6 @@ def c2d_workflow(_dir,
 
     globalsdfg.save("tmp/" + filecore + "-promoted-notfused.sdfg")
 
-    for codeobj in globalsdfg.generate_code():
-        if codeobj.title == 'Frame':
-            with open("tmp/middle_code.cc", 'w') as fp:
-                fp.write(codeobj.clean_code)
-
-    globalsdfg.compile()
-
     globalsdfg.simplify()
     globalsdfg.save("tmp/" + filecore + "-simplified.sdfg")
     globalsdfg.apply_transformations_repeated(PruneConnectors)

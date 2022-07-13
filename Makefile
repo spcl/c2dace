@@ -1,10 +1,10 @@
 #DACE_INCLUDE = ~/.local/lib/python3.9/site-packages/dace/runtime/include
 DACE_INCLUDE = /home/mafaldo/.local/lib/python3.9/site-packages/dace/runtime/include
 
-FILENAME := HPCCG
-FILE := HPCCG_preprocessed/$(FILENAME).c
+FILENAME := matrix_init
+#FILE := HPCCG_preprocessed/$(FILENAME).c
 #FILE := bots_preprocessed/$(FILENAME).c
-#FILE := simple_tests/$(FILENAME).c
+FILE := simple_tests/$(FILENAME).c
 FILENAME2 := _$(FILENAME)
 
 run:

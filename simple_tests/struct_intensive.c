@@ -10,7 +10,7 @@ struct example_struct {
 typedef struct example_struct example;
 
 int main (int argc, char** argv) {
-	long N = pow(2, 26);
+	long N = pow(2, 20);
 	example* ex = malloc(sizeof(example));
 	ex->x = malloc(N*sizeof(double));
 	ex->y = malloc(N*sizeof(double));
@@ -19,16 +19,9 @@ int main (int argc, char** argv) {
 		ex->y[i] = i*2;
 	}
 
-	double sum = 0;
+	double tmp = ex->x[123] + ex->y[598];
 
-	for (long i=0; i<N; i++) {
-		sum += ex->x[i];
-		sum += ex->y[i];
-	}
-
-	double tmp = ex->x[0] + ex->y[0];
-
-	printf("%f\n", sum);
+	printf("%f\n", tmp);
 
 	return 0;
 }

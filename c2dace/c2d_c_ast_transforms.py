@@ -577,8 +577,6 @@ class LILSimplifier(NodeTransformer):
     def visit_AST(self, node: AST):
         self.generic_visit(node)
         self.apply_transformation = True
-        print(self.ptr_names)
-        print(self.matched)
         self.generic_visit(node)
 
         for lineno, applied in self.applied_transform.items():
