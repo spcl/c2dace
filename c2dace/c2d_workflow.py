@@ -144,7 +144,7 @@ def c2d_workflow(_dir,
         ParenExprRemover,
     ]
 
-    debug = True
+    debug = False
     global_array_map = dict()
 
     transformation_args = {
@@ -237,6 +237,15 @@ def c2d_workflow(_dir,
         promoted = scal2sym.promote_scalars_to_symbols(sd)
 
     globalsdfg.save("tmp/" + filecore + "-promoted-notfused.sdfg")
+
+    if debug:
+        for codeobj in globalsdfg.generate_code():
+            if codeobj.title == 'Frame':
+                with open("tmp/middle_code.cc", 'w') as fp:
+                    fp.write(codeobj.clean_code)
+
+        globalsdfg.compile()
+        #return
 
     globalsdfg.simplify()
     globalsdfg.save("tmp/" + filecore + "-simplified.sdfg")
