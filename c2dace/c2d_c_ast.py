@@ -100,6 +100,10 @@ class Long(Type):
     _attributes = ()
 
 
+class ULong(Type):
+    _attributes = ()
+
+
 class LongLong(Type):
     _attributes = ()
 

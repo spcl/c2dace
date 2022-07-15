@@ -233,6 +233,7 @@ def bin_op(cnode, files):
     except:
         toks = [tok.spelling for tok in list(children[0].get_tokens())]
         #print(toks)
+        print(cnode.location.line)
         raise Exception("EXPLOSION BINOP!")
     nodes = [create_own_ast(i, files) for i in cnode.get_children()]
     #print("Op: ",operator," cnode loc: ",cnode.location.line)
@@ -578,6 +579,8 @@ def type_ulonglong(clang_type: clang.cindex.Type):
 def type_long(clang_type: clang.cindex.Type):
     return Long()
 
+def type_ulong(clang_type: clang.cindex.Type):
+    return ULong()
 
 def type_float(clang_type: clang.cindex.Type):
     return Float()
@@ -903,6 +906,7 @@ unsupported_cursor_kinds = [
 
 supported_type_kinds = {
     TypeKind.LONG: type_long,
+    TypeKind.ULONG: type_ulong,
     TypeKind.LONGLONG: type_longlong,
     TypeKind.ULONGLONG: type_ulonglong,
     TypeKind.FLOAT: type_float,
@@ -931,7 +935,6 @@ unsupported_type_kinds = [
     TypeKind.CHAR32,
     TypeKind.USHORT,
     TypeKind.UINT,
-    TypeKind.ULONG,
     TypeKind.UINT128,
     TypeKind.SCHAR,
     TypeKind.WCHAR,
