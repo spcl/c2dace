@@ -6,6 +6,7 @@ import dace
 from dace.sdfg import *
 from dace.data import Scalar
 from dace.properties import CodeBlock
+from regex import W
 
 from c2d_ast2sdfg import *
 from c2d_c_ast_transforms import *
@@ -111,31 +112,58 @@ def c2d_workflow(_dir,
 
         with open("tmp/before.pseudo.cpp", "w") as f:
             try:
-                f.write(c2d_ast_output.get_pseudocode(changed_ast))
+                f.write(get_pseudocode(changed_ast))
             except Exception as e:
                 print("printing pseudocode failed!")
                 #raise e
                 print(e)
 
     transformations = [
+        PowerOptimization,
+        Calloc2Malloc,
         InsertMissingBasicBlocks,
         CXXClassToStruct,
         FlattenStructs,
         ReplaceStructDeclStatements,
         UnaryReferenceAndPointerRemover,
+        LILSimplifier,
         CondExtractor,
         UnaryExtractor,
         UnaryToBinary,
         CallExtractor,
         MoveReturnValueToArguments,
         CompoundToBinary,
-        IndicesExtractor,
+        CompoundArgumentsExtractor,
+        #ArrayPointerExtractor,
+        #ArrayPointerReset,
+        #UnaryReferenceAndPointerRemover,
         InitExtractor,
+        MallocForceInitializer,
+        IndicesExtractor,
         ForDeclarer,
+        ParenExprRemover,
     ]
 
+    debug = False
+    global_array_map = dict()
+
+    transformation_args = {
+        ArrayPointerExtractor: [global_array_map],
+        ArrayPointerReset: [global_array_map],
+    }
+
     for transformation in transformations:
-        changed_ast = transformation().visit(changed_ast)
+        if debug:
+            print("="*10)
+            print(transformation)
+            if transformation == CondExtractor:
+                with open("tmp/middle.pseudo.cpp", "w") as f:
+                    f.write(get_pseudocode(changed_ast))
+                with open("tmp/middle.txt", "w") as f:
+                    f.write(dump(changed_ast, include_attributes=True))
+            #PrinterVisitor().visit(changed_ast) 
+        args = transformation_args.get(transformation, [])
+        changed_ast = transformation(*args).visit(changed_ast)
 
     type_validator = ValidateNodeTypes()
     changed_ast = type_validator.visit(changed_ast)
@@ -147,20 +175,11 @@ def c2d_workflow(_dir,
             f.write(dump(changed_ast, include_attributes=True))
         with open("tmp/after.pseudo.cpp", "w") as f:
             try:
-                f.write(c2d_ast_output.get_pseudocode(changed_ast))
+                f.write(get_pseudocode(changed_ast))
             except Exception as e:
                 print("printing pseudocode failed!")
                 print(e)
 
-    print("saving ast after transformation to tmp/after.txt")
-    with open("after.txt", "w") as f:
-        f.write(dump(changed_ast, include_attributes=True))
-    with open("tmp/after.pseudo.cpp", "w") as f:
-        try:
-            f.write(get_pseudocode(changed_ast))
-        except Exception as e:
-            print("printing pseudocode failed!")
-            print(e)
     # for node in tu.cursor.get_children():
     # if node.spelling == "InitStressTermsForElems":
     # create_ast_copy(new_AST, node, filename)
@@ -184,6 +203,7 @@ def c2d_workflow(_dir,
     globalsdfg.add_scalar(name_mapping[globalsdfg]["c2d_retval"],
                           dace.int32,
                           transient=True)
+
     last_call_expression = [
         DeclRefExpr(name="argc_loc"),
         DeclRefExpr(name="argv_loc"),
@@ -201,7 +221,7 @@ def c2d_workflow(_dir,
     from dace.transformation.dataflow import MergeSourceSinkArrays, PruneConnectors, AugAssignToWCR, MapCollapse, TrivialMapElimination, GPUTransformMap, GPUTransformLocalStorage
     from dace.sdfg.utils import fuse_states
     from dace.transformation import helpers as xfh
-    from dace.sdfg.analysis import scalar_to_symbol as scal2sym
+    from dace.transformation.passes import scalar_to_symbol as scal2sym
     import time
 
     for node, parent in globalsdfg.all_nodes_recursive():
@@ -212,22 +232,39 @@ def c2d_workflow(_dir,
                 #node.instrument = dace.InstrumentationType.Timer
     globalsdfg.save("tmp/" + filecore + "-untransformed.sdfg")
     globalsdfg.validate()
+
     for sd in globalsdfg.all_sdfgs_recursive():
         promoted = scal2sym.promote_scalars_to_symbols(sd)
+
     globalsdfg.save("tmp/" + filecore + "-promoted-notfused.sdfg")
 
-    globalsdfg.simplify
+    if debug:
+        for codeobj in globalsdfg.generate_code():
+            if codeobj.title == 'Frame':
+                with open("tmp/middle_code.cc", 'w') as fp:
+                    fp.write(codeobj.clean_code)
+
+        globalsdfg.compile()
+        #return
+
+    globalsdfg.simplify()
+    globalsdfg.save("tmp/" + filecore + "-simplified.sdfg")
     globalsdfg.apply_transformations_repeated(PruneConnectors)
     xfh.split_interstate_edges(globalsdfg)
     propagate_memlets_sdfg(globalsdfg)
 
     for sd in globalsdfg.all_sdfgs_recursive():
-        promoted = scal2sym.promote_scalars_to_symbols(sd)
+        promoted = scal2sym.promote_scalars_to_symbols(sd, ignore=set(['c2d_retval']))
+        #promoted = scal2sym.promote_scalars_to_symbols(sd)
         print(sd.label, 'promoting', promoted)
     globalsdfg.save("tmp/" + filecore + "-nomap.sdfg")
     xform_types = [
-        TrivialMapElimination, HoistState, InlineTransients, AugAssignToWCR
+        TrivialMapElimination,
+        HoistState,
+        #InlineTransients,
+        AugAssignToWCR
     ]
+
     for i in range(4):
         propagate_memlets_sdfg(globalsdfg)
         globalsdfg.simplify()
@@ -242,8 +279,8 @@ def c2d_workflow(_dir,
                 xfh.split_interstate_edges(sd)
             num = globalsdfg.apply_transformations_repeated(RefineNestedAccess)
             print("Refine nested acesses:", num)
-            l2ms = globalsdfg.apply_transformations_repeated(LoopToMap,
-                                                             validate=False)
+            globalsdfg.save("tmp/pre.sdfg")
+            l2ms = globalsdfg.apply_transformations_repeated(LoopToMap, validate=False)
             transformed = l2ms > 0
 
         globalsdfg.apply_transformations_repeated(LoopToMap, validate=False)
@@ -265,3 +302,5 @@ def c2d_workflow(_dir,
         if codeobj.title == 'Frame':
             with open("tmp/" + filecore + '-dace.cc', 'w') as fp:
                 fp.write(codeobj.clean_code)
+
+    globalsdfg.compile()

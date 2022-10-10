@@ -85,6 +85,18 @@ class IndicesExtractorNodeLister(NodeVisitor):
     def visit_BasicBlock(self, node: BasicBlock):
         return
 
+class ParenExprRemover(NodeTransformer):
+    def visit_ArraySubscriptExpr(self, node: ArraySubscriptExpr):
+        if isinstance(node.unprocessed_name, ArraySubscriptExpr):
+            node.unprocessed_name = self.visit(node.unprocessed_name)
+            return node
+            
+        tmp = node.unprocessed_name
+        while isinstance(tmp, ParenExpr):
+            tmp = tmp.expr
+
+        node.unprocessed_name = tmp
+        return node
 
 class IndicesExtractor(NodeTransformer):
     def __init__(self, count=0):
@@ -128,6 +140,466 @@ class IndicesExtractor(NodeTransformer):
             newbody.append(self.visit(child))
         return BasicBlock(body=newbody)
 
+class CompoundArgumentsExtractor(NodeTransformer):
+    def __init__(self):
+        self.count = 0
+
+    def compute_patch(self, node: CallExpr):
+        if node.name.name in ["malloc", "expf", "powf", "sqrt", "cbrt", "printf"]:
+            return []
+
+        inits = []
+        for i in range(len(node.args)):
+            if not isinstance(node.args[i], UnOp) and not isinstance(node.args[i], BinOp):
+                continue
+
+            var_name = "tmp_arg_" + str(self.count)
+            self.count += 1
+
+            var = DeclRefExpr(name=var_name, type=node.args[i].type)
+            init_var = DeclStmt(vardecl=[VarDecl(name=var_name, type=node.args[i].type, init=node.args[i])])
+
+            node.args[i] = var
+            inits.append(init_var)
+        
+        return inits
+
+    def visit_BasicBlock(self, node: BasicBlock):
+        newbody = []
+        for child in node.body:
+            self.visit(child)
+            if isinstance(child, CallExpr):
+                newbody += self.compute_patch(child)
+
+            if isinstance(child, BinOp) and isinstance(child.rvalue, CallExpr):
+                newbody += self.compute_patch(child.rvalue)
+
+            newbody.append(child)
+
+        return BasicBlock(body=newbody)
+
+
+class Calloc2Malloc(NodeTransformer):
+    def visit_CallExpr(self, node: CallExpr):
+        if node.name.name == "calloc":
+            node.name = DeclRefExpr(name="malloc")
+            node.args[0] = BinOp(op="*", lvalue=copy.deepcopy(node.args[0]), rvalue=copy.deepcopy(node.args[1]))
+            del node.args[1]
+
+        return node
+
+class MallocForceInitializer(NodeTransformer):
+    def __init__(self):
+        self.mallocs = dict()
+        self.first_scan = True
+
+    def visit_BasicBlock(self, node: BasicBlock):
+        if self.first_scan:
+            for child in node.body:
+                self.visit(child)
+                if isinstance(child, BinOp) and isinstance(child.rvalue, CallExpr) and isinstance(child.rvalue.name, DeclRefExpr) and child.rvalue.name.name == "malloc":
+                    tmp = child.lvalue
+
+                    while isinstance(tmp, ParenExpr) or isinstance(tmp, ArraySubscriptExpr):
+                        if isinstance(tmp, ParenExpr):
+                            tmp = tmp.expr
+                        elif isinstance(tmp, ArraySubscriptExpr):
+                            tmp = tmp.unprocessed_name
+
+                    if not isinstance(tmp, DeclRefExpr):
+                        print("WARNING cannot identify ", tmp)
+
+                    self.mallocs[tmp.name] = child
+            
+            return node
+
+        else:
+            newbody = []
+            for child in node.body:
+                self.visit(child)
+                newbody.append(child)
+                if child in self.mallocs.values():
+                    newbody.append(
+                        BinOp(
+                                op="=",
+                                lvalue=ArraySubscriptExpr(
+                                    name="",
+                                    indices="UNDEF",
+                                    type=Double(),
+                                    unprocessed_name=child.lvalue,
+                                    index=IntLiteral(value="0"),
+                                ),
+                                rvalue=IntLiteral(value="0")
+                            )
+                    )
+
+            node.body = newbody
+            return node
+    
+    def visit_FuncDecl(self, node: FuncDecl):
+        self.mallocs = dict()
+        self.first_scan = True
+
+        self.visit(node.body)
+
+        self.first_scan = False
+        self.visit(node.body)
+
+        return node
+
+class ArrayPointerExtractorNodeLister(NodeVisitor):
+    def __init__(self):
+        self.nodes: List[DeclRefExpr] = []
+
+    def visit_DeclRefExpr(self, node: DeclRefExpr):
+        #if not isinstance(node.index,IntLiteral):
+        self.nodes.append(node)
+        return self.generic_visit(node)
+
+    def visit_BasicBlock(self, node: BasicBlock):
+        return
+
+class ArrayPointerExtractor(NodeTransformer):
+    def __init__(self, global_array_map):
+        self.array_map = dict()
+        self.global_array_map = global_array_map
+        self.count = 0
+
+    def pointer_increment(self, node: BinOp):
+        name = node.lvalue.name
+
+        if name not in self.array_map:
+            print("Warning undeclared array in ArrayPointerExtractor: " + name)
+            return self.generic_visit(node)
+
+        if not isinstance(node.rvalue, BinOp):
+            return self.generic_visit(node)
+
+        rval = node.rvalue.rvalue
+        lval = node.rvalue.lvalue
+        op = node.rvalue.op
+
+        if not isinstance(lval, DeclRefExpr):
+            return self.generic_visit(node)
+
+        start_ptr_name = self.array_map[name]
+        start_ptr = DeclRefExpr(name=start_ptr_name, type=Int())
+        binop = BinOp(op=op, lvalue=copy.deepcopy(start_ptr), rvalue=rval)
+
+        return BinOp(op="=", lvalue=start_ptr, rvalue=binop)
+
+    def pointer_assignment(self, node: BinOp):
+        if not hasattr(node.lvalue, "type") or not hasattr(node.rvalue, "type"):
+            return self.generic_visit(node)
+
+        ltype = node.lvalue.type
+        rtype = node.rvalue.type
+
+        if not isinstance(ltype, Pointer) or ltype != rtype:
+            return self.generic_visit(node)
+
+        lval = self.visit(node.lvalue)
+        rval = self.visit(node.rvalue)
+
+        start_ptr_name = self.array_map.get(rval.name)
+        if start_ptr_name is None:
+            print("Warning undeclared array in ArrayPointerExtractor: " + rval.name + ", ", rval)
+            return self.generic_visit(node)
+
+        start_ptr = DeclRefExpr(name=start_ptr_name, type=Int())
+        pointer_binop = BinOp(op="+", lvalue=rval, rvalue=start_ptr)
+        binop = BinOp(op="=", lvalue=lval, rvalue=pointer_binop)
+
+        return binop
+
+    def visit_ArraySubscriptExpr(self, node: ArraySubscriptExpr):
+        if isinstance(node.unprocessed_name, ParenExpr):
+            node.unprocessed_name = node.unprocessed_name.expr
+            return self.visit(node)
+
+        if isinstance(node.unprocessed_name, ArraySubscriptExpr):
+            return ArraySubscriptExpr(
+                name=node.name,
+                indices=node.indices,
+                type=node.type,
+                unprocessed_name=self.visit(node.unprocessed_name),
+                index=node.index)
+
+        name = node.unprocessed_name.name
+
+        ptr_name = self.array_map.get(name)
+        if ptr_name is None:
+            print("Warning undeclared array in ArrayPointerExtractor: " + node.name)
+            return node
+
+        ptr_index = DeclRefExpr(name=ptr_name, type=Int())
+        binop = BinOp(op="+", lvalue=node.index, rvalue=ptr_index)
+        return ArraySubscriptExpr(
+            name=node.name,
+            indices=node.indices,
+            type=node.type,
+            unprocessed_name=self.visit(node.unprocessed_name),
+            index=binop)
+
+    def visit_BinOp(self, node: BinOp):
+        if node.op != "=" :
+            return self.generic_visit(node)
+
+        lval = node.lvalue
+        while isinstance(lval, ParenExpr):
+            lval = lval.expr
+
+        node.lvalue = lval
+
+        # a[i] = something
+        if isinstance(lval, ArraySubscriptExpr):
+            return self.pointer_assignment(node)
+
+        # unknown lvalue
+        if not isinstance(lval, DeclRefExpr):
+            return self.generic_visit(node)
+
+        # a = b
+        if isinstance(node.rvalue, DeclRefExpr):
+            return self.pointer_assignment(node)
+
+        return self.pointer_increment(node)
+
+    def visit_BasicBlock(self, node: BasicBlock):
+        newbody = []
+
+        for child in node.body:
+            newbody.append(self.visit(child))
+            if not isinstance(child, DeclStmt) or len(child.vardecl) != 1:
+                continue
+                
+            # TODO account for multiple declarations
+            vardecl = child.vardecl[0]
+
+            if not hasattr(vardecl, "init"):
+                continue
+
+            varname = "tmp_array_ptr_" + vardecl.name + "_" + str(self.count)
+
+            if isinstance(vardecl.init, CallExpr) and isinstance(vardecl.init.name, DeclRefExpr) and vardecl.init.name.name == "malloc":
+                self.array_map[vardecl.name] = varname
+                self.count += 1
+                newbody.append(VarDecl(name=self.array_map[vardecl.name], type=Int(), init=IntLiteral(value="0")))
+                continue
+            
+            expr = vardecl.init
+            while isinstance(expr, ParenExpr):
+                expr = expr.expr
+
+            if isinstance(expr, DeclRefExpr) and expr.name in self.array_map:
+                self.array_map[vardecl.name] = varname
+                self.count += 1
+                newbody.append(VarDecl(name=self.array_map[vardecl.name], type=Int(), init=IntLiteral(value="0")))
+                continue
+
+        return BasicBlock(body=newbody)
+
+    def visit_FuncDecl(self, node: FuncDecl):
+        if node.name != "main":
+            return node
+
+        self.array_map = dict()
+
+        self.generic_visit(node)
+        self.global_array_map[node.name] = self.array_map
+
+        return node
+
+
+class ArrayPointerReset(NodeTransformer):
+    def __init__(self, global_array_map):
+        self.array_map = dict()
+        self.global_array_map = global_array_map
+
+    def reset_pointer(self, node):
+        if not isinstance(node, BinOp):
+            return []
+        
+        if not isinstance(node.lvalue, DeclRefExpr):
+            return []
+        
+        ptr_name = self.array_map.get(node.lvalue.name)
+        if ptr_name is None:
+            return []
+        
+        return [BinOp(op="=", lvalue=DeclRefExpr(name=ptr_name, type=Int()), rvalue=IntLiteral(value="0"))]
+
+    def visit_BasicBlock(self, node: BasicBlock):
+        newbody = []
+
+        for child in node.body:
+            newbody.append(child)
+            newbody += self.reset_pointer(child)
+        
+        return BasicBlock(body=newbody)
+
+    def visit_FuncDecl(self, node: FuncDecl):
+        self.array_map = self.global_array_map.get(node.name, dict())
+        self.generic_visit(node)
+
+        return node
+
+class LILSimplifier(NodeTransformer):
+    def __init__(self):
+        self.matched = dict()
+        self.ptr_names = dict()
+        self.applied_transform = dict()
+        self.apply_transformation = False
+
+    def BasicBlock_visit_only(self, node: BasicBlock):
+        previous_match = -1
+        previous_child = None
+        previous_varname = None
+        previous_arr = None
+
+        for i, child in enumerate(node.body):
+            self.visit(child)
+            if not isinstance(child, BinOp):
+                continue
+
+            rval = child.rvalue
+            while isinstance(rval, ParenExpr):
+                rval = rval.expr
+
+            if not isinstance(rval, DeclRefExpr) or not isinstance(rval.type, Pointer):
+                continue
+
+            lval = child.lvalue
+            while isinstance(lval, ParenExpr):
+                lval = lval.expr
+
+            if not isinstance(lval, ArraySubscriptExpr) or not isinstance(lval.type, Pointer):
+                continue
+
+            arr_node = lval.unprocessed_name
+
+            while isinstance(arr_node, ParenExpr):
+                arr_node = arr_node.expr
+
+            if not isinstance(arr_node, DeclRefExpr) or not arr_node.name.startswith("c2d_struct"):
+                continue
+
+            struct_str_position = arr_node.name.find("___")
+            if previous_match == i-1 and arr_node.name[:struct_str_position] == previous_arr_name[:struct_str_position]:
+                self.ptr_names[previous_varname] = child.lineno
+                self.ptr_names[rval.name] = child.lineno
+                self.matched[child.lineno] = (
+                    node,
+                    child,
+                    previous_child,
+                    {
+                        rval.name: lval,
+                        previous_varname: previous_arr,
+                    },
+                )
+                self.applied_transform[child.lineno] = False
+
+            previous_match = i
+            previous_child = child
+            previous_varname = rval.name
+            previous_arr_name = arr_node.name
+            previous_arr = lval
+        
+        return node
+
+    def BasicBlock_transform(self, node: BasicBlock):
+        new_body = []
+        for child in node.body:
+            self.visit(child)
+
+            if isinstance(child, DeclStmt):
+                found = False
+                for i in child.vardecl:
+                    if isinstance(i.type, Pointer) and i.name in self.ptr_names:
+                        print("throwing ", i.name)
+                        found = True
+                        break
+
+                if found:
+                    continue
+
+            if not isinstance(child, BinOp):
+                new_body.append(child)
+                continue
+
+            if isinstance(child.lvalue, UnOp) and isinstance(child.lvalue.lvalue, DeclRefExpr) and child.lvalue.lvalue.name in self.ptr_names:
+                lineno = self.ptr_names[child.lvalue.lvalue.name]
+                if not self.applied_transform[lineno]:
+                    print("WARNING applying transformation for LIL sparse matrix. If your code doesn't have a LIL sparse matrix this is wrong.")
+                    print("Init at line ", lineno)
+                self.applied_transform[lineno] = True
+
+                print("Set value at ", child.lineno)
+
+                (_, _, _, array_mapping) = self.matched[lineno]
+                cur_name = list(array_mapping.keys())[0] + "_offset"
+                arr = array_mapping[child.lvalue.lvalue.name]
+                binop = BinOp(
+                    op=child.op,
+                    lvalue=ArraySubscriptExpr(
+                        name="",
+                        indices="UNDEF",
+                        unprocessed_name=copy.deepcopy(arr),
+                        index=DeclRefExpr(name=cur_name, type=Int()),
+                        type=arr.type.pointee_type
+                    ),
+                    rvalue=child.rvalue
+                )
+                new_body.append(binop)
+
+                if cur_name == child.lvalue.lvalue.name + "_offset":
+                    increment = UnOp(
+                        op=child.lvalue.op,
+                        postfix=True,
+                        lvalue=DeclRefExpr(name=cur_name, type=Int()),
+                    )
+
+                    new_body.append(increment)
+
+            else:
+                new_body.append(child)
+
+        node.body = new_body
+
+        return node
+
+    def visit_BasicBlock(self, node: BasicBlock):
+        if not self.apply_transformation:
+            return self.BasicBlock_visit_only(node)
+        else:
+            return self.BasicBlock_transform(node)
+
+    def visit_AST(self, node: AST):
+        self.generic_visit(node)
+        self.apply_transformation = True
+        self.generic_visit(node)
+
+        for lineno, applied in self.applied_transform.items():
+            if not applied:
+                continue
+
+            (body, child1, child2, arr_names) = self.matched[lineno]
+            child1.rvalue = CallExpr(name=DeclRefExpr(name="malloc"), args=[IntLiteral(value="1")])
+            child2.rvalue = CallExpr(name=DeclRefExpr(name="malloc"), args=[IntLiteral(value="1")])
+
+            new_body = []
+            for child in body.body:
+                if child != child2:
+                    new_body.append(child)
+                    continue
+
+                offset_name = list(arr_names.keys())[0] + "_offset"
+                new_body.append(VarDecl(name=offset_name, type=Int(), init=IntLiteral(value="0")))
+                new_body.append(child)
+            
+            body.body = new_body
+
+        return node
 
 class InitExtractorNodeLister(NodeVisitor):
     def __init__(self):
@@ -185,13 +657,24 @@ class InitExtractor(NodeTransformer):
             res = lister.nodes
             temp = self.count
             newbody.append(self.visit(child))
-            if res is not None:
-                for i in range(0, len(res)):
-                    #print(res[i].name)
+            if res is None:
+                continue
+
+            for i in res:
+                '''
+                # check if the init is malloc
+                if isinstance(i.init, CallExpr) and isinstance(i.init.name, DeclRefExpr) and i.init.name.name != "malloc":
+                    # add also an init with a concrete value s.t. the transient is always initialized
                     newbody.append(
                         BinOp(op="=",
-                              lvalue=DeclRefExpr(name=res[i].name),
-                              rvalue=res[i].init))
+                                lvalue=DeclRefExpr(name=i.name),
+                                rvalue=IntLiteral(value="0")))
+                '''
+
+                newbody.append(
+                    BinOp(op="=",
+                            lvalue=DeclRefExpr(name=i.name),
+                            rvalue=i.init))
 
         return BasicBlock(body=newbody)
 
@@ -266,6 +749,28 @@ class CallExtractor(NodeTransformer):
                 newbody.append(self.visit(child))
 
         return BasicBlock(body=newbody)
+
+
+class PowerOptimization(NodeTransformer):
+    def visit_CallExpr(self, node: CallExpr):
+        if node.name.name != "pow":
+            return node
+
+        if len(node.args) != 2:
+            return node
+
+        if not isinstance(node.args[1], IntLiteral):
+            return node
+
+        value = node.args[1].value[0]
+
+        if value != '2':
+            return node
+
+        lnode = copy.deepcopy(node.args[0])
+        rnode = copy.deepcopy(node.args[0])
+
+        return BinOp(op="*", lvalue=lnode, rvalue=rnode)
 
 
 class CondExtractorNodeLister(NodeVisitor):
@@ -422,6 +927,16 @@ class CompoundToBinary(NodeTransformer):
 
 
 class UnaryReferenceAndPointerRemover(NodeTransformer):
+    def visit_ParenExpr(self, node: ParenExpr):
+        # check for unpacked structs that we are dereferencing
+        if not isinstance(node.expr, UnOp):
+            return self.generic_visit(node)
+
+        if not isinstance(node.expr.lvalue, list):
+            return self.generic_visit(node)
+        
+        return list(map(lambda x: ParenExpr(expr=self.generic_visit(x), type=x.type), node.expr.lvalue))
+
     def visit_UnOp(self, node: UnOp):
         if node.op == "*" or node.op == "&":
             return self.generic_visit(node.lvalue)
@@ -433,27 +948,24 @@ class FindOutputNodesVisitor(NodeVisitor):
     def __init__(self):
         self.nodes: List[DeclRefExpr] = []
 
+    def visit_ParenExpr(self, node: ParenExpr):
+        self.visit(node.expr)
+
+    def visit_DeclRefExpr(self, node: DeclRefExpr):
+        self.nodes.append(node)
+
+    def visit_UnOp(self, node: UnOp):
+        if node.op == "*":
+            self.visit(node.lvalue)
+
+    def visit_ArraySubscriptExpr(self, node: ArraySubscriptExpr):
+        self.visit(node.unprocessed_name)
+
     def visit_BinOp(self, node: BinOp):
         if node.op == "=":
-            if isinstance(node.lvalue, DeclRefExpr):
-                self.nodes.append(node.lvalue)
-            if isinstance(node.lvalue, UnOp):
-                if node.lvalue.op == "*":
-                    if isinstance(node.lvalue.lvalue, DeclRefExpr):
-                        self.nodes.append(node.lvalue.lvalue)
-                    if isinstance(node.lvalue.lvalue, ArraySubscriptExpr):
-                        tmp = node.lvalue.lvalue
-                        while isinstance(tmp, ArraySubscriptExpr):
-                            tmp = tmp.unprocessed_name
-                        if isinstance(tmp, DeclRefExpr):
-                            self.nodes.append(tmp)
-            if isinstance(node.lvalue, ArraySubscriptExpr):
-                tmp = node.lvalue
-                while isinstance(tmp, ArraySubscriptExpr):
-                    tmp = tmp.unprocessed_name
-                if isinstance(tmp, DeclRefExpr):
-                    self.nodes.append(tmp)
-            self.visit(node.rvalue)
+            self.visit(node.lvalue)
+            if isinstance(node.rvalue, BinOp):
+                self.visit(node.rvalue)
 
     #def visit_TernaryExpr(self, node: TernaryExpr):
     #    used_vars_condition = [node for node in walk(node.cond) if isinstance(node, DeclRefExpr)]
@@ -465,6 +977,9 @@ class FindOutputNodesVisitor(NodeVisitor):
 class FindInputNodesVisitor(NodeVisitor):
     def __init__(self):
         self.nodes: List[DeclRefExpr] = []
+
+    def visit_ParenExpr(self, node: ParenExpr):
+        self.visit(node.expr)
 
     def visit_DeclRefExpr(self, node: DeclRefExpr):
         self.nodes.append(node)
@@ -490,6 +1005,7 @@ class FunctionLister(NodeVisitor):
         self.function_names: Set[str] = set()
         self.defined_function_names: Set[str] = set()
         self.undefined_function_names: Set[str] = set()
+        self.function_is_void: Set[str] = set()
 
     def visit_AST(self, node: AST):
         self.generic_visit(node)
@@ -502,11 +1018,17 @@ class FunctionLister(NodeVisitor):
         if node.body is not None and node.body != []:
             self.defined_function_names.add(node.name)
 
+        if isinstance(node.result_type, Void):
+            self.function_is_void.add(node.name)
+
     def is_defined(self, function_name: str) -> bool:
         return function_name in self.defined_function_names
 
     def is_declared(self, function_name: str) -> bool:
         return function_name in self.function_names
+
+    def is_void(self, function_name: str) -> bool:
+        return function_name in self.function_is_void
 
 
 class MoveReturnValueToArguments(NodeTransformer):
@@ -532,7 +1054,7 @@ class MoveReturnValueToArguments(NodeTransformer):
 
     def visit_CallExpr(self, node: CallExpr):
         if self.function_lister.is_defined(node.name.name):
-            if not isinstance(node.type, Void):
+            if not self.function_lister.is_void(node.name.name):
                 node.args.append(
                     DeclRefExpr(name="NULL",
                                 type=Pointer(pointee_type=Void())))
@@ -613,7 +1135,7 @@ class ReplaceStructDeclStatements(NodeTransformer):
 
     def get_field_replacement_name(self, struct_type_name: str,
                                    struct_variable_name: str, field_name: str):
-        return "c2d_struct_" + struct_type_name + "_" + struct_variable_name + "_" + field_name
+        return "c2d_struct_" + struct_type_name + "_" + struct_variable_name + "___" + field_name
 
     def split_struct_type(self, struct_like_type,
                           var_name) -> Dict[str, Tuple[str, Type]]:
@@ -662,12 +1184,32 @@ class ReplaceStructDeclStatements(NodeTransformer):
         if isinstance(container_expr, DeclRefExpr):
             replacement_name, replacement_type = self.split_struct_type(
                 container_expr.type, container_expr.name)[desired_field]
+
+            if isinstance(replacement_type, Pointer):
+                # need to wrap in ParenExpr when deallocating pointer
+                return ParenExpr(
+                        expr=UnOp(
+                            op="*",
+                            postfix=False,
+                            type=replacement_type,
+                            lvalue=DeclRefExpr(name=replacement_name, type=replacement_type)
+                        ),
+                        type=replacement_type
+                    )
+
             return DeclRefExpr(name=replacement_name, type=replacement_type)
         if isinstance(container_expr, ArraySubscriptExpr):
             replacement = copy.deepcopy(container_expr)
             replacement.unprocessed_name = self.replace_container_expr(
                 container_expr.unprocessed_name, desired_field)
-            replacement.type = replacement.unprocessed_name.type.element_type
+            if isinstance(replacement.unprocessed_name.type, Array):
+                replacement.type = replacement.unprocessed_name.type.element_type
+            elif isinstance(replacement.unprocessed_name.type, Pointer):
+                replacement.type = replacement.unprocessed_name.type.pointee_type
+            else:
+                print("unsupported type in array subscript expr ", replacement.unprocessed_name.type)
+                raise
+
             return replacement
         if isinstance(container_expr, MemberRefExpr):
             replacement = copy.deepcopy(container_expr)
@@ -680,9 +1222,13 @@ class ReplaceStructDeclStatements(NodeTransformer):
             replacement.type = container_expr.type.inject_type(
                 replacement.lvalue.type)
             return replacement
+        if isinstance(container_expr, ParenExpr):
+            expr = copy.deepcopy(container_expr.expr)
+            out_expr = self.replace_container_expr(expr, desired_field)
+            return out_expr
 
         raise Exception("cannot replace container expression: ",
-                        container_expr)
+                        container_expr, " at line ", container_expr.lineno)
 
     def visit_AST(self, node: AST):
         self.structdefs = {sd.name: sd for sd in node.structdefs}
@@ -702,6 +1248,7 @@ class ReplaceStructDeclStatements(NodeTransformer):
         if hasattr(node.lvalue, "type") and hasattr(node.rvalue, "type"):
             if node.lvalue.type.is_struct_like():
                 if node.lvalue.type == node.rvalue.type:
+                    # assign a struct to another
                     struct = node.lvalue.type.get_chain_end()
 
                     if node.op == "=":
@@ -726,16 +1273,70 @@ class ReplaceStructDeclStatements(NodeTransformer):
                             return [
                                 self.visit(s) for s in replacement_statements
                             ]
+                elif isinstance(node.rvalue, CallExpr) and node.rvalue.name.name == "malloc":
+                    # call malloc on every field
+                    mallocCall = CallExpr(
+                            type=Pointer(pointee_type=Void()),
+                            args=[IntLiteral(value="1")],
+                            name=DeclRefExpr(name="malloc", type=Pointer(pointee_type=Void()))
+                        )
+
+                    struct = node.lvalue.type.get_chain_end()
+
+                    if node.op == "=":
+                        replacement_statements = []
+
+                        fields = self.get_struct(struct.name).fields
+                        if fields is not None:
+                            for f in fields:
+                                l_member_ref = MemberRefExpr(
+                                    name=f.name,
+                                    type=node.lvalue.type.inject_type(f.type),
+                                    containerexpr=node.lvalue)
+                                binop = BinOp(op="=",
+                                              type=f.type,
+                                              lvalue=l_member_ref,
+                                              rvalue=copy.deepcopy(mallocCall))
+                                replacement_statements.append(binop)
+                            return [
+                                self.visit(s) for s in replacement_statements
+                            ]
+                    return []
 
         return self.generic_visit(node)
 
     def visit_VarDecl(self, node: VarDecl):
-        if node.type.is_struct_like():
-            splits = self.split_struct_type(node.type, node.name)
-            if splits is not None:
-                return [VarDecl(name=n, type=t) for (n, t) in splits.values()]
+        # only process structs
+        if not node.type.is_struct_like():
+            return self.generic_visit(node)
 
-        return self.generic_visit(node)
+        # only valid and defined structs
+        splits = self.split_struct_type(node.type, node.name)
+        if splits is None:
+            return self.generic_visit(node)
+
+        if not hasattr(node, "init"):
+            return self.generic_visit(node)
+
+        # null initialization to pointer
+        if isinstance(node.init, IntLiteral) and node.init.value == ['0']:
+            return [VarDecl(name=n, type=t, init=IntLiteral(value="0")) for (n, t) in splits.values()]
+
+        # check if the struct is initialized as malloc
+        if not isinstance(node.init, CallExpr):
+            return [VarDecl(name=n, type=t) for (n, t) in splits.values()]
+
+        if node.init.name.name != "malloc":
+            return [VarDecl(name=n, type=t) for (n, t) in splits.values()]
+
+        mallocCall =CallExpr(
+                type=Pointer(pointee_type=Void()),
+                args=node.init.args,
+                name=DeclRefExpr(name="malloc", type=Pointer(pointee_type=Void()))
+            )
+
+        return [VarDecl(name=n, type=t, init=mallocCall) for (n, t) in splits.values()]
+
 
     def visit_DeclStmt(self, node: DeclStmt):
         replacement_stmts = []
@@ -759,7 +1360,6 @@ class ReplaceStructDeclStatements(NodeTransformer):
         return self.generic_visit(node)
 
     def visit_ParmDecl(self, node: ParmDecl):
-
         if node.type.is_struct_like():
             splits = self.split_struct_type(node.type, node.name)
 
@@ -915,3 +1515,19 @@ class CXXClassToStruct(NodeTransformer):
                                     [self.visit(a) for a in node.args])
 
         return self.generic_visit(node)
+
+
+class PrinterVisitor(NodeVisitor):
+    def visit_VarDecl(self, node: VarDecl):
+        print(node.name + " = ", end='')
+        if hasattr(node, "init"):
+            print(node.init)
+        else:
+            print()
+
+    def visit_BasicBlock(self, node: BasicBlock):
+        for child in node.body:
+            if not isinstance(child, DeclStmt):
+                print(child)
+            self.visit(child)
+        return node

@@ -60,6 +60,19 @@ def raise_exception(error_message):
     raise UserWarning(error_message)
 
 
+def get_var_name(node):
+    if isinstance(node, ArraySubscriptExpr):
+        return get_var_name(node.unprocessed_name)
+
+    if isinstance(node, ParenExpr):
+        return get_var_name(node.expr)
+
+    if isinstance(node, DeclRefExpr):
+        return node.name
+    else:
+        print("WARNING cannot find name of ", node)
+
+
 def make_nested_sdfg_with_no_context_change(top_sdfg: Cursor, new_sdfg: Cursor,
                                             name: str, used_variables, node,
                                             state):
@@ -71,8 +84,13 @@ def make_nested_sdfg_with_no_context_change(top_sdfg: Cursor, new_sdfg: Cursor,
     ]
     binop_nodes = [node for node in walk(node.body) if isinstance(node, BinOp)]
     write_nodes = [node for node in binop_nodes if node.op == "="]
-    write_vars = [node.lvalue for node in write_nodes]
-    read_vars = copy.deepcopy(used_vars)
+    call_nodes = [node.args for node in walk(node.body) if isinstance(node, CallExpr)]
+    call_nodes = sum(call_nodes, [])
+    call_nodes = filter(lambda x: hasattr(x, "type"), call_nodes)
+    call_nodes = filter(lambda x: isinstance(x.type, Pointer), call_nodes)
+
+    write_vars = [node.lvalue for node in write_nodes] + list(copy.deepcopy(call_nodes))
+    read_vars = copy.deepcopy(used_vars) + list(call_nodes)
     for i in write_vars:
         if i in read_vars:
             read_vars.remove(i)
@@ -85,11 +103,12 @@ def make_nested_sdfg_with_no_context_change(top_sdfg: Cursor, new_sdfg: Cursor,
     read_names = []
 
     for i in write_vars:
-        if state.name_mapping.get(top_sdfg).get(i.name) in top_sdfg.arrays:
-            write_names.append(i.name)
+        if state.name_mapping.get(top_sdfg).get(get_var_name(i)) in top_sdfg.arrays:
+            write_names.append(get_var_name(i))
     for i in read_vars:
-        if state.name_mapping.get(top_sdfg).get(i.name) in top_sdfg.arrays:
-            read_names.append(i.name)
+        if state.name_mapping.get(top_sdfg).get(get_var_name(i)) in top_sdfg.arrays:
+            read_names.append(get_var_name(i))
+
     for i in top_sdfg.arrays:
         found = False
         for j in used_variables:
@@ -139,6 +158,7 @@ def make_nested_sdfg_with_no_context_change(top_sdfg: Cursor, new_sdfg: Cursor,
     sym_dict = {}
     for i in top_sdfg.symbols:
         sym_dict[i] = i
+
     # for i in top_sdfg.arrays:
     # m = top_sdfg.arrays[i]
     # print("ARS no context change:", i, m.shape, m.total_size)
@@ -167,10 +187,15 @@ def make_nested_sdfg_with_no_context_change(top_sdfg: Cursor, new_sdfg: Cursor,
             memlet = ""
             #print("MEMLET fixes:",i)
             done = True
+
+        start_name = state.arr_start_name_mapping.get(i)
+        if not start_name:
+            start_name = "0"
+
         if not done:
             for k in shape:
                 if first:
-                    memlet = "0:" + str(k)
+                    memlet = start_name + ":" + str(k)
                     first = False
                 else:
                     memlet = memlet + ",0:" + str(k)
@@ -247,12 +272,26 @@ def finish_add_state_to_sdfg(state: SDFGState, top_sdfg: SDFG,
 
 
 def remove_duplicates(vars: List[DeclRefExpr]):
+    i = 0
+    while i < len(vars):
+        if isinstance(vars[i], ParenExpr):
+            vars[i] = vars[i].expr
+        elif isinstance(vars[i], DeclRefExpr):
+            i += 1
+        elif isinstance(vars[i], ArraySubscriptExpr):
+            i += 1
+        else:
+            print("WARNING (remove_duplicates) - UNKNOWN EXPRESSION TYPE:", vars[i])
+            i += 1
+
     new_set = []
     for i in vars:
         not_found = True
         for j in new_set:
-            if i.name == j.name:
+            if get_var_name(i) == get_var_name(j):
                 not_found = False
+                break
+
         if not_found:
             new_set.append(i)
     return new_set
@@ -270,14 +309,17 @@ def match_names(sdfgname: str, cname: str):
 
 
 class TaskletWriter:
-    def __init__(self, outputs: List[str], outputs_changes: List[str]):
+    def __init__(self, outputs: List[str], outputs_changes: List[str], name_mapping=None):
         self.outputs = outputs
         self.outputs_changes = outputs_changes
+        self.name_mapping = name_mapping
         self.ast2ctypes = {
             Double: "double",
             Float: "float",
             Int: "int",
             Char: "char",
+            Long: "long",
+            LongLong: "long long"
         }
         self.ast_elements = {
             BinOp: self.binop2string,
@@ -326,8 +368,11 @@ class TaskletWriter:
         #print("RL: ",self.write_tasklet_code(node.rvalue))
         # print(node.op)
         op = node.op
-        # if op == "&&":
-        #    op=" and "
+        if op == "&&":
+            op=" and "
+
+        if op == "||":
+            op=" or "
         # if self.write_tasklet_code(node.lvalue) is None:
         #    a=1
         # if self.write_tasklet_code(node.rvalue) is None:
@@ -337,6 +382,10 @@ class TaskletWriter:
 
     def declref2string(self, node: DeclRefExpr):
         return_value = node.name
+
+        if self.name_mapping is not None:
+            if self.name_mapping.get(node.name) is not None:
+                return_value = self.name_mapping[node.name]
 
         if len(self.outputs) > 0:
             #print("TASK WRITER:",node.name,self.outputs[0],self.outputs_changes[0])
@@ -466,7 +515,7 @@ def find_new_array_name(arrays, name: str):
     return "dace_" + name + ('_%d' % index)
 
 
-def generate_memlet(op, top_sdfg, state):
+def generate_memlet(op, top_sdfg, state, offset='0'):
     if state.name_mapping.get(top_sdfg).get(op.name) is not None:
         shape = top_sdfg.arrays[state.name_mapping[top_sdfg][op.name]].shape
     elif state.name_mapping.get(state.globalsdfg).get(op.name) is not None:
@@ -474,8 +523,7 @@ def generate_memlet(op, top_sdfg, state):
             op.name]].shape
     else:
         raise NameError("Variable name not found: ", op.name)
-    # print("SHAPE:")
-    # print(shape)
+    #print("SHAPE: ", shape)
     tmp_node = op
     indices = []
     while isinstance(tmp_node, ArraySubscriptExpr):
@@ -505,7 +553,7 @@ def generate_memlet(op, top_sdfg, state):
         else:
             if first:
                 if i != 1:
-                    memlet = '0:' + str(i)
+                    memlet = offset + ':' + str(i)
                 else:
                     memlet = '0'
                 first = False
@@ -540,6 +588,7 @@ class AST2SDFG:
         self.libstates = ["print"]
         self.incomplete_arrays = {}
         self.name_mapping = name_mapping or NameMap()
+        self.arr_start_name_mapping = {}
         self.last_loop_continue = {}
         self.last_loop_break = {}
         self.last_loop_continue_state = {}
@@ -589,10 +638,12 @@ class AST2SDFG:
 
     def translate(self, node: Node, sdfg: SDFG):
         if node.__class__ in self.ast_elements:
+            #print('-'*10)
+            #print(self.ast_elements[node.__class__])
             self.ast_elements[node.__class__](node, sdfg)
         else:
             print("WARNING:", node.__class__.__name__)
-            # raise TypeError("Unsupported ast node type - will be implemented")
+            raise TypeError("Unsupported ast node type - will be implemented")
 
     def tu2sdfg(self, node: AST, sdfg: SDFG):
         for i in node.typedefs:
@@ -682,18 +733,32 @@ class AST2SDFG:
 
     def funcdecl2sdfg(self, node: FuncDecl, sdfg: SDFG):
         print("FUNC: ", node.name)
+
         if node.body is None:
             print("Empty function")
             return
+
         used_vars = [
             node for node in walk(node.body) if isinstance(node, DeclRefExpr)
         ]
         binop_nodes = [
             node for node in walk(node.body) if isinstance(node, BinOp)
         ]
+        call_nodes = [node.args for node in walk(node.body) if isinstance(node, CallExpr)]
+        call_nodes = sum(call_nodes, [])
+        call_nodes = filter(lambda x: hasattr(x, "type"), call_nodes)
+        call_nodes = filter(lambda x: isinstance(x.type, Pointer), call_nodes)
+
         write_nodes = [node for node in binop_nodes if node.op == "="]
-        write_vars = [node.lvalue for node in write_nodes]
-        read_vars = copy.deepcopy(used_vars)
+        write_vars = [] + list(copy.deepcopy(call_nodes))
+        for n in write_nodes:
+            tmp = n.lvalue
+            while isinstance(tmp, ParenExpr):
+                tmp = tmp.expr
+
+            write_vars.append(tmp)
+
+        read_vars = copy.deepcopy(used_vars) + list(call_nodes)
         for i in write_vars:
             if i in read_vars:
                 read_vars.remove(i)
@@ -702,10 +767,12 @@ class AST2SDFG:
         used_vars = remove_duplicates(used_vars)
         write_names = []
         read_names = []
+
         for i in write_vars:
-            write_names.append(i.name)
+            write_names.append(get_var_name(i))
         for i in read_vars:
-            read_names.append(i.name)
+            read_names.append(get_var_name(i))
+
         parameters = node.args.copy()
         new_sdfg = dace.SDFG(node.name)
         substate = add_simple_state_to_sdfg(self, sdfg, "state" + node.name)
@@ -754,7 +821,7 @@ class AST2SDFG:
                       rvalue=DeclRefExpr(name=symbol.name),
                       op="="))
 
-        for variable_in_call in variables_in_call:
+        for i, variable_in_call in enumerate(variables_in_call):
             all_arrays = self.get_arrays_in_context(sdfg)
 
             sdfg_name = self.name_mapping.get(sdfg).get(variable_in_call.name)
@@ -764,8 +831,7 @@ class AST2SDFG:
             for array_name, array in all_arrays.items():
                 if array_name in [sdfg_name]:
                     matched = True
-                    local_name = parameters[variables_in_call.index(
-                        variable_in_call)]
+                    local_name = parameters[i]
                     self.name_mapping[new_sdfg][
                         local_name.name] = find_new_array_name(
                             self.all_array_names, local_name.name)
@@ -804,8 +870,7 @@ class AST2SDFG:
             if not matched:
                 for array_name, array in all_arrays.items():
                     if array_name in [globalsdfg_name]:
-                        local_name = parameters[variables_in_call.index(
-                            variable_in_call)]
+                        local_name = parameters[i]
                         self.name_mapping[new_sdfg][
                             local_name.name] = find_new_array_name(
                                 self.all_array_names, local_name.name)
@@ -843,6 +908,7 @@ class AST2SDFG:
         sym_dict = {}
         for i in sdfg.symbols:
             sym_dict[i] = i
+
         for i in self.libstates:
             self.name_mapping[new_sdfg][i] = find_new_array_name(
                 self.all_array_names, i)
@@ -869,9 +935,9 @@ class AST2SDFG:
                             internal_sdfg, self.name_mapping[new_sdfg][i],
                             memlet)
 
-        for i in variables_in_call:
+        for c, i in enumerate(variables_in_call):
 
-            local_name = parameters[variables_in_call.index(i)]
+            local_name = parameters[c]
             if self.name_mapping.get(sdfg).get(i.name) is not None:
                 var = sdfg.arrays.get(self.name_mapping[sdfg][i.name])
                 mapped_name = self.name_mapping[sdfg][i.name]
@@ -884,6 +950,7 @@ class AST2SDFG:
                     self.name_mapping[self.globalsdfg][i.name])
                 mapped_name = self.name_mapping[self.globalsdfg][i.name]
             else:
+                print(i)
                 raise NameError("Variable name not found: " + i.name)
 
             if not hasattr(var, "shape") or len(var.shape) == 0:
@@ -900,11 +967,14 @@ class AST2SDFG:
                 add_memlet_read(substate, mapped_name, internal_sdfg,
                                 self.name_mapping[new_sdfg][local_name.name],
                                 memlet)
+
         start_state = new_sdfg.add_state("Start_State_Function" + node.name,
                                          is_start_state=True)
         self.last_sdfg_states[new_sdfg] = start_state
+
         for i in assigns:
             self.translate(i, new_sdfg)
+
         final_state = new_sdfg.add_state("Final_State_Function" + node.name)
         self.last_function_state[new_sdfg] = final_state
 
@@ -914,6 +984,8 @@ class AST2SDFG:
                     final_state) not in new_sdfg._edges:
                 new_sdfg.add_edge(self.last_sdfg_states[new_sdfg], final_state,
                                   dace.InterstateEdge())
+
+        print("ENDF: ", node.name)
 
     def basicblock2sdfg(self, node: BasicBlock, sdfg: SDFG):
         #print("BASIC BLOCK")
@@ -1031,17 +1103,19 @@ class AST2SDFG:
 
         body_start_state = sdfg.add_state("BodyWhileStartState" + str(line))
         self.last_sdfg_states[sdfg] = body_start_state
+        self.translate(node.body[0], sdfg)
+
         final_substate = sdfg.add_state("MergeState" + str(line))
+
         self.last_loop_break[sdfg] = final_substate
         self.last_loop_continue[sdfg] = guard_substate
-        self.translate(node.body[0], sdfg)
         body_end_state = add_simple_state_to_sdfg(
             self, sdfg, "BodyWhileEndState" + str(line))
 
+
+
         #body_state = make_nested_sdfg_with_no_context_change(
         #    sdfg, new_sdfg, name, used_vars, self)
-
-        self.translate(node.body[0], new_sdfg)
 
         sdfg.add_edge(guard_substate, body_start_state,
                       dace.InterstateEdge(condition))
@@ -1159,6 +1233,9 @@ class AST2SDFG:
                     elif isinstance(init, BinOp):
                         entry[iter_name] = ConditionWriter(
                             sdfg, self.name_mapping).write_tasklet_code(init)
+                    elif isinstance(init, UnOp):
+                        entry[iter_name] = ConditionWriter(
+                            sdfg, self.name_mapping).write_tasklet_code(init)
                     else:
                         raise TypeError("Unexpected for declaration type")
                 #sdfg.add_edge(begin_state, guard_substate, dace.InterstateEdge(assignments=entry))
@@ -1209,6 +1286,7 @@ class AST2SDFG:
 
         #sdfg.add_edge(self.last_sdfg_states[sdfg], end_loop_state,
         #             dace.InterstateEdge())
+
         loop_state = make_nested_sdfg_with_no_context_change(
             sdfg, new_sdfg, name, used_vars, node, self)
         self.translate(node.body, new_sdfg)
@@ -1310,6 +1388,8 @@ class AST2SDFG:
                     self.get_dace_type(rettype))
                 # special_list_in.append(retval.name)
                 special_list_out.append(retval.name + "_out")
+                tw.outputs.append(retval.name)
+                tw.outputs_changes.append(retval.name + "_out")
                 text = tw.write_tasklet_code(
                     BinOp(lvalue=retval, op="=", rvalue=node)) + ";"
 
@@ -1354,12 +1434,19 @@ class AST2SDFG:
             setattr(tasklet, "code", CodeBlock(text, dace.Language.CPP))
 
     def malloc2sdfg(self, node: BinOp, sdfg: SDFG):
-        varname = node.lvalue.name
+        varname = get_var_name(node.lvalue)
+
         #print("VARNAME:", varname)
-        rvalue = node.rvalue.expr.args[0]
+
+        # sanity check
+        if not isinstance(node.rvalue, CallExpr):
+            print("WARNING: malloc2sdfg: rvalue is not a call")
+
+        rvalue = node.rvalue.args[0]
 
         if self.incomplete_arrays.get((sdfg, varname)) is not None:
             oldnode = self.incomplete_arrays.get((sdfg, varname))
+            del self.incomplete_arrays[(sdfg, varname)]
             oldsizes = []
             totalsize = 1
             etype = oldnode.type.pointee_type
@@ -1367,12 +1454,17 @@ class AST2SDFG:
                 oldsizes.append(etype.size)
                 totalsize = totalsize * etype.size
                 etype = etype.element_type
+
+            # if is a single value
+            if len(oldsizes) == 0:
+                oldsizes.append(1)
+
             datatype = self.get_dace_type(oldnode.type)
             sizes = []
             if isinstance(rvalue, IntLiteral):
                 sizes.insert(0, rvalue.value[0])
             elif isinstance(rvalue, BinOp):
-                tw = TaskletWriter([], [])
+                tw = TaskletWriter([], [], self.name_mapping[sdfg])
                 text = tw.write_tasklet_code(rvalue)
                 sizes.insert(0, text)
             else:
@@ -1384,19 +1476,110 @@ class AST2SDFG:
                 if (totalsize != 1):
                     print("Not Match for sizes:", totalsize, sizes[0])
                     raise ValueError("pointer sizes mismatch")
+            
+            # check if we have a double pointer
+            if "c2d_struct" in varname:
+                if isinstance(oldnode.type.pointee_type, Pointer) and isinstance(oldnode.type.pointee_type.pointee_type, Pointer):
+                    sizes.append(0)
+            else:
+                if isinstance(oldnode.type.pointee_type, Pointer):
+                    sizes.append(0)
             #print(datatype.__class__.__name__)
             #print(oldnode.name, sizes, datatype)
-            self.name_mapping[sdfg][oldnode.name] = find_new_array_name(
-                self.all_array_names, oldnode.name)
-            sdfg.add_array(self.name_mapping[sdfg][oldnode.name],
+            print("mallocing ", oldnode.name, " of size ", sizes, " and type ", datatype)
+            mapped_name = find_new_array_name(self.all_array_names, oldnode.name)
+            self.name_mapping[sdfg][oldnode.name] = mapped_name
+            sdfg.add_array(mapped_name,
                            shape=sizes,
                            dtype=datatype,
                            transient=True)
-            self.all_array_names.append(self.name_mapping[sdfg][oldnode.name])
+            self.all_array_names.append(mapped_name)
 
         else:
-            raise_exception(
-                NameError(varname + " not in incomplete array list"))
+            mapped_name = self.name_mapping[sdfg][varname]
+            arr = sdfg._arrays.get(mapped_name)
+            if arr is None:
+                print("WARNING: array to overwrite not found in sdfg")
+                return
+
+            datatype = arr.dtype
+
+            shape = list(arr.shape)
+
+            # check if we are assigning to the elements of an array
+            if isinstance(node.lvalue, ArraySubscriptExpr):
+                index = 1
+                if shape[1] != 0:
+                    print("WARNING: skipping allocation of ", mapped_name, " because already allocated")
+                    return
+            else:
+                index = 0
+                if shape[0] != 1:
+                    print("WARNING: skipping allocation of ", mapped_name, " because already allocated")
+                    return
+
+            if isinstance(rvalue, IntLiteral):
+                shape[0] = rvalue.value[0]
+            elif isinstance(rvalue, BinOp):
+                tw = TaskletWriter([], [], self.name_mapping[sdfg])
+                text = tw.write_tasklet_code(rvalue)
+                shape[index] = text
+            else:
+                raise TypeError("malloc value cannot be parsed")
+
+            print("Modified array:", mapped_name, " to have shape:", shape)
+            self.name_mapping[sdfg][varname] = find_new_array_name(self.all_array_names, varname)
+            sdfg.add_array(self.name_mapping[sdfg][varname],
+                           shape=shape,
+                           dtype=datatype,
+                           transient=True)
+            self.all_array_names.append(self.name_mapping[sdfg][varname])
+
+    def arrayassign2sdfg(self, node, sdfg, output_names, output_names_tasklet, output_vars, input_vars, array_subsets, array_subsets_vars, reverse_mapping):
+        output_names_changed = [o_t + "_out" for o_t in output_names_tasklet]
+
+        substate = add_simple_state_to_sdfg(
+            self, sdfg,
+            "_state" + str(node.location_line) + "_" + str(self.tasklet_count))
+        self.tasklet_count = self.tasklet_count + 1
+
+        for arr, arr_ptr in array_subsets.items():
+            view_name = find_new_array_name(self.all_array_names, arr + "_view")
+            self.all_array_names.append(view_name)
+
+            src = substate.add_read(arr)
+            view = substate.add_access(view_name)
+            arr_obj = self.get_arrays_in_context(sdfg).get(arr)
+
+            if arr_obj is None:
+                print("Arr is not defined, arrassign")
+
+            memlet_subset = self.get_memlet_range(sdfg, input_vars, arr, reverse_mapping[arr], offset=arr_ptr)
+            view_memlet = dace.Memlet(data=arr, subset=memlet_subset)
+            padded_subset = "0:" + str(view_memlet.volume)
+            view_memlet.other_subset = padded_subset
+
+            sdfg.add_view(view_name, [view_memlet.volume], arr_obj.dtype)
+            substate.add_edge(src, None, view, 'views', view_memlet)
+            for i, j, k in zip(output_names, output_names_tasklet,
+                            output_names_changed):
+
+                memlet_range = self.get_memlet_range(sdfg, output_vars, i, j)
+
+                memlet_split = memlet_range.split(",")
+                if isinstance(node.lvalue, ArraySubscriptExpr):
+                    index = node.lvalue.index.name
+                    memlet_split[0] = self.get_name_mapping_in_context(sdfg)[index]
+                    memlet_split[1] = padded_subset
+                else:
+                    memlet_split[0] = padded_subset
+
+                memlet_range = ",".join(memlet_split)
+
+                dst = substate.add_write(i)
+                memlet = dace.Memlet(data=i, subset=memlet_range, other_subset=padded_subset)
+                substate.add_nedge(view, dst, memlet)
+
 
     def binop2sdfg(self, node: BinOp, sdfg: SDFG):
         node.location_line = self.tasklet_count
@@ -1419,6 +1602,42 @@ class AST2SDFG:
             print("ERROR HERE")
         self.tasklet_count += 1
 
+        inputnodefinder = FindInputNodesVisitor()
+        inputnodefinder.visit(node)
+        input_vars = inputnodefinder.nodes
+        input_names = []
+        input_names_tasklet = []
+
+        previous_array = None
+        array_subsets = dict()
+        array_subsets_vars = []
+        reverse_mapping = dict()
+
+        for i in input_vars:
+            mapped_name = self.get_name_mapping_in_context(sdfg).get(i.name)
+            arrays = self.get_arrays_in_context(sdfg)
+
+            if mapped_name not in arrays:
+                continue
+
+            if previous_array is not None and i.name.startswith("tmp_array_ptr"):
+                array_subsets[previous_array] = mapped_name
+                array_subsets_vars.append(i.name)
+                previous_array = None
+
+            arr = arrays.get(mapped_name)
+            if len(arr.shape) > 1 or arr.shape[0] != 1:
+                previous_array = mapped_name            
+                reverse_mapping[mapped_name] = i.name
+
+            # do not add duplicates
+            if mapped_name in input_names:
+                continue
+
+            input_names.append(mapped_name)
+            input_names_tasklet.append(i.name)
+
+
         outputnodefinder = FindOutputNodesVisitor()
         outputnodefinder.visit(node)
         output_vars = outputnodefinder.nodes
@@ -1426,27 +1645,29 @@ class AST2SDFG:
         output_names_tasklet = []
 
         for i in output_vars:
-            mapped_name = self.get_name_mapping_in_context(sdfg).get(i.name)
             arrays = self.get_arrays_in_context(sdfg)
+            mapped_name = self.get_name_mapping_in_context(sdfg).get(i.name)
+
+            if self.incomplete_arrays.get((sdfg, i.name)) is not None:
+                rval = node.rvalue
+                rval_name = get_var_name(rval)
+                
+                rval_mapped = self.get_name_mapping_in_context(sdfg).get(rval_name)
+                if rval_mapped not in arrays:
+                    # no need to handle this (i think) because we don't have double pointers
+                    print("Assigning to incomplete array ", i.name , " with rval ", rval, " ", rval_mapped)
+                    continue
+
+                print("mapping ", i.name, " to ", rval_mapped)
+                self.name_mapping[sdfg][i.name] = rval_mapped
+
+                # no need to create a tasklet because we do a mapping at compile time
+                return
 
             if mapped_name in arrays and mapped_name not in output_names:
                 output_names.append(mapped_name)
                 output_names_tasklet.append(i.name)
-
-        inputnodefinder = FindInputNodesVisitor()
-        inputnodefinder.visit(node)
-        input_vars = inputnodefinder.nodes
-        input_names = []
-        input_names_tasklet = []
-
-        for i in input_vars:
-            mapped_name = self.get_name_mapping_in_context(sdfg).get(i.name)
-            arrays = self.get_arrays_in_context(sdfg)
-
-            if mapped_name in arrays and mapped_name not in input_names:
-                input_names.append(mapped_name)
-                input_names_tasklet.append(i.name)
-
+        
         substate = add_simple_state_to_sdfg(
             self, sdfg,
             "_state" + str(node.location_line) + "_" + str(self.tasklet_count))
@@ -1472,8 +1693,17 @@ class AST2SDFG:
             add_memlet_write(substate, i, tasklet, k, memlet_range)
 
         tw = TaskletWriter(output_names_tasklet, output_names_changed)
-        # print("BINOP:",output_names,output_names_tasklet,output_names_changed)
         text = tw.write_tasklet_code(node) + ";"
+        #print("BINOP:",output_names_tasklet,output_names_changed, " > ",text)
+        
+        # remove offset that was already applied
+        oldtext = text
+        for i in array_subsets_vars:
+            text = text.replace("+"+i, "")
+
+        if len(array_subsets_vars) > 0:
+            print("applied offset transformation ", oldtext, " => ", text)
+
         # print("BINOPTASKLET:",text)
         tasklet.code = CodeBlock(text, dace.Language.CPP)
 
@@ -1574,7 +1804,7 @@ class AST2SDFG:
         self.all_array_names.append(self.name_mapping[sdfg][node.name])
 
     def get_memlet_range(self, sdfg: SDFG, variables: List[Node],
-                         var_name: str, var_name_tasklet: str) -> str:
+                         var_name: str, var_name_tasklet: str, offset='0') -> str:
         var = self.get_arrays_in_context(sdfg).get(var_name)
 
         if len(var.shape) == 0:
@@ -1585,7 +1815,7 @@ class AST2SDFG:
 
         for o_v in variables:
             if o_v.name == var_name_tasklet:
-                return generate_memlet(o_v, sdfg, self)
+                return generate_memlet(o_v, sdfg, self, offset)
 
     def get_arrays_in_context(self, sdfg: SDFG):
         a = self.globalsdfg.arrays.copy()
