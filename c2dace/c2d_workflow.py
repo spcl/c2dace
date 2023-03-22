@@ -79,7 +79,8 @@ def c2d_workflow(_dir,
 
     index = clang.cindex.Index.create()
     print("parsing...")
-    tu = index.parse(filename)
+    parse_args = ['-I/usr/include', '-I/usr/local/include', '-I/usr/lib64/clang/13.0.1/include']
+    tu = index.parse(filename, parse_args)
     if len(tu.diagnostics) > 0:
         print("encountered " + str(len(tu.diagnostics)) +
               Formatting.format_string(" diagnostics", Formatting.YELLOW) +
@@ -89,6 +90,38 @@ def c2d_workflow(_dir,
                 print(" " + str(d))
         else:
             print("run the program in verbose mode to print diagnostics.")
+
+    print("getting includes")
+    def list_includes(translation_unit):
+        """ Find all includes within the given TranslationUnit
+        """
+        cursor = translation_unit.cursor
+
+        includes = []
+
+        for child in cursor.get_children():
+            # We're only interested in preprocessor #include directives
+            if child.kind == CursorKind.INCLUSION_DIRECTIVE:
+                # We don't want Cursors from files other than the one belonging to
+                # translation_unit otherwise we get #includes for every file found
+                # when clang parsed the input file.
+                if child.location.file != None and child.location.file.name == cursor.displayname:
+                    includes.append( child.displayname )
+
+        return includes
+
+    parse_flags = clang.cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
+
+    source_translation_unit = clang.cindex.TranslationUnit.from_source(filename, parse_args, None, parse_flags, None)
+
+    source_includes = list_includes(source_translation_unit)
+    print(source_includes)
+
+    #list_macros(source_translation_unit)
+
+    headers = ""
+    for include in source_includes:
+        headers += "#include <" + include + ">\n"
 
     print("copying ast...")
     from os import listdir
@@ -218,7 +251,7 @@ def c2d_workflow(_dir,
 
     from dace import propagate_memlets_sdfg
     from dace.transformation.interstate import StateFusion, StateAssignElimination, InlineSDFG, LoopToMap, InlineTransients, HoistState, RefineNestedAccess
-    from dace.transformation.dataflow import MergeSourceSinkArrays, PruneConnectors, AugAssignToWCR, MapCollapse, TrivialMapElimination, GPUTransformMap, GPUTransformLocalStorage
+    from dace.transformation.dataflow import PruneConnectors, AugAssignToWCR, TrivialMapElimination
     from dace.sdfg.utils import fuse_states
     from dace.transformation import helpers as xfh
     from dace.transformation.passes import scalar_to_symbol as scal2sym
@@ -233,8 +266,10 @@ def c2d_workflow(_dir,
     globalsdfg.save("tmp/" + filecore + "-untransformed.sdfg")
     globalsdfg.validate()
 
+    prom = scal2sym.ScalarToSymbolPromotion()
+    prom.ignore = set(['c2d_retval'])
     for sd in globalsdfg.all_sdfgs_recursive():
-        promoted = scal2sym.promote_scalars_to_symbols(sd)
+        promoted = prom.apply_pass(sd, {})
 
     globalsdfg.save("tmp/" + filecore + "-promoted-notfused.sdfg")
 
@@ -254,7 +289,7 @@ def c2d_workflow(_dir,
     propagate_memlets_sdfg(globalsdfg)
 
     for sd in globalsdfg.all_sdfgs_recursive():
-        promoted = scal2sym.promote_scalars_to_symbols(sd, ignore=set(['c2d_retval']))
+        promoted = prom.apply_pass(sd, {})
         #promoted = scal2sym.promote_scalars_to_symbols(sd)
         print(sd.label, 'promoting', promoted)
     globalsdfg.save("tmp/" + filecore + "-nomap.sdfg")
