@@ -13,6 +13,8 @@ from dace.sdfg import *
 from c2d_c_ast_transforms import *
 
 #clang.cindex.Config.set_library_file(cfg.clang_library_file)
+clang.cindex.Config.set_library_path('/usr/lib/llvm-10/lib')
+
 
 
 class NameMap(dict):

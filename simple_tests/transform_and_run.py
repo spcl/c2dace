@@ -3,7 +3,7 @@ import unittest, os, sys, subprocess
 from parameterized import parameterized
 
 FOLDER = './simple_tests/'
-DACE_INCLUDE = "~/.local/lib/python3.10/site-packages/dace/runtime/include"
+DACE_INCLUDE = "/home/codespace/.python/current/lib/python3.10/site-packages/dace/runtime/include/"
 
 def execute_command(command, shell=False):
     process = subprocess.run(command,

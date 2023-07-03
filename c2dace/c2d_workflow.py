@@ -79,7 +79,7 @@ def c2d_workflow(_dir,
 
     index = clang.cindex.Index.create()
     print("parsing...")
-    parse_args = ['-I/usr/include', '-I/usr/local/include', '-I/usr/lib64/clang/13.0.1/include']
+    parse_args = ['-I/usr/include', '-I/usr/local/include', '-I/usr/lib/clang/10.0.0/include']
     tu = index.parse(filename, parse_args)
     if len(tu.diagnostics) > 0:
         print("encountered " + str(len(tu.diagnostics)) +
