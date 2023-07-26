@@ -600,7 +600,7 @@ class AST2SDFG:
         self.last_call_expression = {globalsdfg: last_call_expression}
         self.tasklet_count = 0
         self.all_array_names = []
-        self.globalsdfg.add_scalar("print", dace.int32, transient=True)
+        self.globalsdfg.add_scalar("print", dace.int32, transient=False)
         substate = add_simple_state_to_sdfg(self, self.globalsdfg, "AllState")
         inouts_in_new_sdfg = []
         for i in self.globalsdfg.arrays:

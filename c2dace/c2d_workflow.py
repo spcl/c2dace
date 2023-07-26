@@ -177,7 +177,7 @@ def c2d_workflow(_dir,
         ParenExprRemover,
     ]
 
-    debug = False
+    debug = True
     global_array_map = dict()
 
     transformation_args = {
@@ -189,11 +189,12 @@ def c2d_workflow(_dir,
         if debug:
             print("="*10)
             print(transformation)
-            if transformation == CondExtractor:
-                with open("tmp/middle.pseudo.cpp", "w") as f:
-                    f.write(get_pseudocode(changed_ast))
-                with open("tmp/middle.txt", "w") as f:
-                    f.write(dump(changed_ast, include_attributes=True))
+            # if transformation == CondExtractor:
+            transformation_name = transformation.__name__
+            with open(f"tmp/middle.pseudo.{transformation_name}.cpp", "w") as f:
+                f.write(get_pseudocode(changed_ast))
+            with open(f"tmp/middle.{transformation_name}.txt", "w") as f:
+                f.write(dump(changed_ast, include_attributes=True))
             #PrinterVisitor().visit(changed_ast) 
         args = transformation_args.get(transformation, [])
         changed_ast = transformation(*args).visit(changed_ast)
@@ -276,14 +277,22 @@ def c2d_workflow(_dir,
     if debug:
         for codeobj in globalsdfg.generate_code():
             if codeobj.title == 'Frame':
-                with open("tmp/middle_code.cc", 'w') as fp:
+                with open("tmp/middle_code-promoted-notfused.cc", 'w') as fp:
                     fp.write(codeobj.clean_code)
 
         globalsdfg.compile()
         #return
 
-    globalsdfg.simplify()
+    # bug here
+    globalsdfg.simplify() #bug: DeadDataflowElimination
     globalsdfg.save("tmp/" + filecore + "-simplified.sdfg")
+    if debug:
+        for codeobj in globalsdfg.generate_code():
+            if codeobj.title == 'Frame':
+                with open("tmp/middle_code-simplified.cc", 'w') as fp:
+                    fp.write(codeobj.clean_code)
+
+        globalsdfg.compile()
     globalsdfg.apply_transformations_repeated(PruneConnectors)
     xfh.split_interstate_edges(globalsdfg)
     propagate_memlets_sdfg(globalsdfg)
@@ -292,6 +301,7 @@ def c2d_workflow(_dir,
         promoted = prom.apply_pass(sd, {})
         #promoted = scal2sym.promote_scalars_to_symbols(sd)
         print(sd.label, 'promoting', promoted)
+    # bug: no printf
     globalsdfg.save("tmp/" + filecore + "-nomap.sdfg")
     xform_types = [
         TrivialMapElimination,

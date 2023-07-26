@@ -1,6 +1,6 @@
 DACE_INCLUDE = ~/.local/lib/python3.9/site-packages/dace/runtime/include
 
-FILENAME := array_access
+FILENAME := struct_ptr_arr
 FILE := simple_tests/$(FILENAME).c
 FILENAME2 := _$(FILENAME)
 
