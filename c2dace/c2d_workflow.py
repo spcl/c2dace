@@ -79,7 +79,7 @@ def c2d_workflow(_dir,
 
     index = clang.cindex.Index.create()
     print("parsing...")
-    parse_args = ['-I/usr/include', '-I/usr/local/include', '-I/usr/lib64/clang/13.0.1/include']
+    parse_args = ['-I/usr/include', '-I/usr/local/include', '-I/usr/lib/clang/10.0.0/include']
     tu = index.parse(filename, parse_args)
     if len(tu.diagnostics) > 0:
         print("encountered " + str(len(tu.diagnostics)) +
@@ -131,6 +131,22 @@ def c2d_workflow(_dir,
     print("FILELIST:", dirfilelist)
     files = [filename] + dirfilelist
 
+    # def dump_ast(cursor, source_file, tab=0):
+    #     """
+    #     Recursively prints the AST nodes.
+    #     :param cursor: The starting cursor to dump.
+    #     :param source_file: The file path of the source code being parsed.
+    #     :param tab: The amount of indentation for this cursor.
+    #     """
+    #     # if cursor.location.file is None or cursor.location.file.name != source_file:
+    #     #     return
+
+    #     print('  ' * tab, cursor.kind, cursor.spelling)
+    #     for child in cursor.get_children():
+    #         dump_ast(child, source_file, tab + 1)
+
+    # dump_ast(tu.cursor, files[0])
+
     own_ast = create_own_ast(tu.cursor, files)
     changed_ast = own_ast
 
@@ -177,7 +193,7 @@ def c2d_workflow(_dir,
         ParenExprRemover,
     ]
 
-    debug = False
+    debug = True
     global_array_map = dict()
 
     transformation_args = {
@@ -189,11 +205,12 @@ def c2d_workflow(_dir,
         if debug:
             print("="*10)
             print(transformation)
-            if transformation == CondExtractor:
-                with open("tmp/middle.pseudo.cpp", "w") as f:
-                    f.write(get_pseudocode(changed_ast))
-                with open("tmp/middle.txt", "w") as f:
-                    f.write(dump(changed_ast, include_attributes=True))
+            # if transformation == CondExtractor:
+            transformation_name = transformation.__name__
+            with open(f"tmp/middle.pseudo.{transformation_name}.cpp", "w") as f:
+                f.write(get_pseudocode(changed_ast))
+            with open(f"tmp/middle.{transformation_name}.txt", "w") as f:
+                f.write(dump(changed_ast, include_attributes=True))
             #PrinterVisitor().visit(changed_ast) 
         args = transformation_args.get(transformation, [])
         changed_ast = transformation(*args).visit(changed_ast)
@@ -276,14 +293,22 @@ def c2d_workflow(_dir,
     if debug:
         for codeobj in globalsdfg.generate_code():
             if codeobj.title == 'Frame':
-                with open("tmp/middle_code.cc", 'w') as fp:
+                with open("tmp/middle_code-promoted-notfused.cc", 'w') as fp:
                     fp.write(codeobj.clean_code)
 
         globalsdfg.compile()
         #return
 
-    globalsdfg.simplify()
+    # bug here
+    globalsdfg.simplify() #bug: DeadDataflowElimination
     globalsdfg.save("tmp/" + filecore + "-simplified.sdfg")
+    if debug:
+        for codeobj in globalsdfg.generate_code():
+            if codeobj.title == 'Frame':
+                with open("tmp/middle_code-simplified.cc", 'w') as fp:
+                    fp.write(codeobj.clean_code)
+
+        globalsdfg.compile()
     globalsdfg.apply_transformations_repeated(PruneConnectors)
     xfh.split_interstate_edges(globalsdfg)
     propagate_memlets_sdfg(globalsdfg)
@@ -292,6 +317,7 @@ def c2d_workflow(_dir,
         promoted = prom.apply_pass(sd, {})
         #promoted = scal2sym.promote_scalars_to_symbols(sd)
         print(sd.label, 'promoting', promoted)
+    # bug: no printf
     globalsdfg.save("tmp/" + filecore + "-nomap.sdfg")
     xform_types = [
         TrivialMapElimination,

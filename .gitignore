@@ -134,3 +134,6 @@ dmypy.json
 # dace output
 tmp
 _dacegraphs
+
+workspace
+.vscode
