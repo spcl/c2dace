@@ -1,7 +1,7 @@
 DACE_INCLUDE = ~/.local/lib/python3.9/site-packages/dace/runtime/include
 
-FILENAME := struct_ptr_arr
-FILE := simple_tests/$(FILENAME).c
+FILENAME := struct_test
+FILE := workspace/$(FILENAME).cpp
 FILENAME2 := _$(FILENAME)
 
 run:

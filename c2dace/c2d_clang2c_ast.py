@@ -16,6 +16,7 @@ def translation_unit(cnode, files):
     structdefs = [node for node in nodes if isinstance(node, StructDecl)]
     classdefs = [node for node in nodes if isinstance(node, ClassDecl)]
     cxxmethods = [node for node in nodes if isinstance(node, CXXMethod)]
+    # constructdefs = [node for node in nodes if isinstance(node, ConstructorDecl)]
 
     return AST(typedefs=typedefs,
                funcdefs=funcdefs,
@@ -24,6 +25,7 @@ def translation_unit(cnode, files):
                structdefs=structdefs,
                classdefs=classdefs,
                cxxmethods=cxxmethods,
+            #    constructdefs=constructdefs,
                lineno=cnode.location.line)
 
 
@@ -145,6 +147,8 @@ def var_decl(cnode, files):
     if index != -1:
         tokens = tokens[0:tokens.index("=")]
         init = nodes[len(nodes) - 1]
+        if isinstance(init, CCastExpr):
+            init = init.expr
         cnodes.pop(len(nodes) - 1)
         nodes.pop(len(nodes) - 1)
     #print("TOKENS bef:", tokens)
@@ -542,6 +546,19 @@ def call_expr(cnode, files):
 def cxx_this_expr(cnode, files):
     return CXXThisExpr(type=get_c_type_from_clang_type(cnode.type))
 
+# def constructor_decl(cnode, files):
+#     nodes = [create_own_ast(i, files) for i in cnode.get_children()]
+#     args = [node for node in nodes if isinstance(node, ParmDecl)]
+#     body = next((node for node in nodes if isinstance(node, BasicBlock)), None)
+
+#     return ConstructorDecl(
+#         name=cnode.spelling,
+#         args=args,
+#         body=body,
+#         parent_class_type=get_c_type_from_clang_type(cnode.semantic_parent.type),
+#         lineno=cnode.location.line
+#     )
+
 
 # === TYPE TRAMSLATIONS ============================================================================
 def type_unknown(clang_type: clang.cindex.Type):
@@ -662,6 +679,7 @@ def create_own_ast(cnode, files):
     if current_file is not None and str(current_file) not in files:
         return
     if cnode.kind in supported_cursor_kinds:
+        print("visit cursor", cnode.kind, cnode.spelling, cnode.location.line)
         node = supported_cursor_kinds[cnode.kind](cnode, files)
         if "type" in node._attributes and not hasattr(node, "type"):
             node.type = get_c_type_from_clang_type(cnode.type)
@@ -731,6 +749,7 @@ supported_cursor_kinds = {
     clang.cindex.CursorKind.COMPOUND_ASSIGNMENT_OPERATOR: compound_assign_op,
     clang.cindex.CursorKind.BREAK_STMT: break_stmt,
     clang.cindex.CursorKind.CONTINUE_STMT: continue_stmt,
+    # clang.cindex.CursorKind.CONSTRUCTOR: constructor_decl,
 }
 
 unsupported_cursor_kinds = [

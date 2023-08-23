@@ -214,6 +214,7 @@ class AST(Node):
         "cxxmethods",
         "vardefs",
         "decldefs",
+        # "construcdefs",
     )
 
 
@@ -445,6 +446,16 @@ class CallExpr(Node):
         'name',
         'args',
     )
+
+# class ConstructorDecl(Node):
+#     _attributes = (
+#         'name',               # The name of the constructor (same as the class name)
+#         'parent_class_type',  # The type of the class this constructor is part of
+#     )
+#     _fields = (
+#         'args',               # The parameters of the constructor
+#         'body',               # The body of the constructor
+#     )
 
 
 class ArraySubscriptExpr(Expression):

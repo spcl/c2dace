@@ -162,6 +162,16 @@ def pseudocode_node_compoundassignop(node: CompoundAssignOp):
 def pseudocode_node_ternaryexpr(node: TernaryExpr):
 	return "%s ? %s : %s" % (pseudocode_node(node.cond), pseudocode_node(node.left), pseudocode_node(node.right))
 
+# def pseudocode_node_constructordecl(node: ConstructorDecl):
+#     args_pseudocode = ", ".join([pseudocode_node(a) for a in node.args])
+#     return "%s::%s (%s) %s\n\n" % (
+#         node.parent_class_type, 
+#         node.name, 
+#         args_pseudocode, 
+#         pseudocode_node(node.body)
+#     )
+
+
 
 pseudocode_node_functions = {
 	RetStmt: pseudocode_node_retstmt,
@@ -190,4 +200,5 @@ pseudocode_node_functions = {
 	BreakStmt: pseudocode_node_breakstmt,
 	CompoundAssignOp: pseudocode_node_compoundassignop,
 	TernaryExpr: pseudocode_node_ternaryexpr,
+	# ConstructorDecl: pseudocode_node_constructordecl
 }

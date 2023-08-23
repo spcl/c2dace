@@ -131,6 +131,22 @@ def c2d_workflow(_dir,
     print("FILELIST:", dirfilelist)
     files = [filename] + dirfilelist
 
+    # def dump_ast(cursor, source_file, tab=0):
+    #     """
+    #     Recursively prints the AST nodes.
+    #     :param cursor: The starting cursor to dump.
+    #     :param source_file: The file path of the source code being parsed.
+    #     :param tab: The amount of indentation for this cursor.
+    #     """
+    #     # if cursor.location.file is None or cursor.location.file.name != source_file:
+    #     #     return
+
+    #     print('  ' * tab, cursor.kind, cursor.spelling)
+    #     for child in cursor.get_children():
+    #         dump_ast(child, source_file, tab + 1)
+
+    # dump_ast(tu.cursor, files[0])
+
     own_ast = create_own_ast(tu.cursor, files)
     changed_ast = own_ast
 
